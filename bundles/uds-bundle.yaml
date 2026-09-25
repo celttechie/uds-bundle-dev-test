@@ -1,0 +1,16 @@
+# Air-Gapped UDS Bundle Definition
+kind: UDSBundle
+metadata:
+  name: airgap-core-workloads
+  description: "Self-contained air-gapped UDS bundle orchestrating Zarf packages and zero-trust services"
+  version: "0.1.0"
+  architecture: amd64
+  authors:
+    - "Defense Unicorns & Platform Security Team"
+
+packages:
+  # Base UDS Core Workload
+  - name: airgap-demo-workload
+    repository: "local"
+    path: .
+    namespace: uds-demo

@@ -1,0 +1,19 @@
+# Zarf Package Definition for Air-Gapped Demo Workload
+kind: ZarfPackageConfig
+metadata:
+  name: airgap-demo-workload
+  description: "Self-contained air-gapped demo workload for Zero-Trust validation"
+  version: "0.1.0"
+  architecture: amd64
+
+components:
+  - name: offline-app
+    required: true
+    description: "Core demo application with static assets and health check probes"
+    images:
+      - registry.k8s.io/e2e-test-images/agnhost:2.45
+    actions:
+      onDeploy:
+        after:
+          - cmd: "kubectl get pods -A -o wide"
+            description: "Verify pod scheduling across isolated nodes"

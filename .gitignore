@@ -1,0 +1,19 @@
+# Terraform / OpenTofu
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+.terraform.lock.hcl
+
+# Build & Media Drop Artifacts
+build/
+*.iso
+*.qcow2
+*.tar.zst
+
+# Secrets and Keys
+*.pem
+*.key
+id_rsa*
+known_hosts
