@@ -5,17 +5,12 @@ metadata:
   version: "0.1.0"
   architecture: amd64
 
-variables:
-  - name: APP_NAMESPACE
-    description: "Namespace to deploy the training application"
-    default: "training-app"
-
 components:
   - name: training-workloads
     required: true
     manifests:
       - name: training-app-manifests
-        namespace: "###ZARF_VAR_APP_NAMESPACE###"
+        namespace: training-app
         files:
           - manifests/namespace.yaml
           - manifests/network-policies.yaml
