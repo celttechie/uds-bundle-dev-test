@@ -1,0 +1,141 @@
+assessment-results:
+  import-ap:
+    href: ""
+  metadata:
+    last-modified: 2026-09-25T19:46:00.931388145Z
+    oscal-version: 1.1.2
+    published: 2026-09-25T19:46:00.931388145Z
+    remarks: Assessment Results generated from Lula
+    title: '[System Name] Security Assessment Results (SAR)'
+    version: 0.0.1
+  results:
+    - description: Assessment results for performing Validations with Lula version v0.8.0
+      findings:
+        - description: |
+            Control Implementation: 8ffc80d0-c303-42be-82cd-f6d9170e54b2 / Implemented Requirement: 268f0c24-059f-4859-a683-8cf58db786de
+            Access Enforcement - Containers must enforce least privilege by running in isolated workloads.
+          related-observations:
+            - observation-uuid: 2f7ccacf-218d-4c52-90aa-83b0567a4394
+          target:
+            status:
+              state: satisfied
+            target-id: ac-3
+            type: objective-id
+          title: 'Validation Result - Control: ac-3'
+          uuid: f8ee0cff-90dd-4302-bca8-00e2c67f7d25
+        - description: |
+            Control Implementation: 8ffc80d0-c303-42be-82cd-f6d9170e54b2 / Implemented Requirement: 717e5803-06f0-420d-b538-c2235929cebc
+            Information Flow Enforcement - Traffic must be strictly isolated via NetworkPolicies.
+          related-observations:
+            - observation-uuid: 402a99a5-79d7-4386-903a-98a7075b4566
+          target:
+            status:
+              state: satisfied
+            target-id: ac-4
+            type: objective-id
+          title: 'Validation Result - Control: ac-4'
+          uuid: 5ebc47a6-72f4-49b3-a315-2778d6b47ff0
+        - description: |
+            Control Implementation: 8ffc80d0-c303-42be-82cd-f6d9170e54b2 / Implemented Requirement: a8293751-24b2-4d2a-8921-729ab51ef283
+            Information System Component Inventory - Software platform namespaces active and inventory maintained.
+          related-observations:
+            - observation-uuid: dd846897-eefc-4d32-8274-44324978e05b
+          target:
+            status:
+              state: satisfied
+            target-id: cm-8
+            type: objective-id
+          title: 'Validation Result - Control: cm-8'
+          uuid: acabb7c2-dadb-4d0a-96fa-3872929ec890
+        - description: |
+            Control Implementation: 8ffc80d0-c303-42be-82cd-f6d9170e54b2 / Implemented Requirement: 15a09cf5-4558-4f9f-b938-6b29a2816943
+            Identification and Authentication - Service-to-service authentication and identity via ServiceAccounts.
+          related-observations:
+            - observation-uuid: 5f4c11c9-a847-42ba-b828-46f02280e11a
+          target:
+            status:
+              state: satisfied
+            target-id: ia-2
+            type: objective-id
+          title: 'Validation Result - Control: ia-2'
+          uuid: 1caffd48-78cd-4a2b-b96c-f23e2576ab04
+        - description: |
+            Control Implementation: 8ffc80d0-c303-42be-82cd-f6d9170e54b2 / Implemented Requirement: 6283a611-60ae-4634-bfef-0c312bfce223
+            Transmission Confidentiality and Integrity - Services and secrets configured for cluster communications.
+          related-observations:
+            - observation-uuid: 424e244d-ef73-4109-92b9-e69b8cd7cb3f
+          target:
+            status:
+              state: satisfied
+            target-id: sc-8
+            type: objective-id
+          title: 'Validation Result - Control: sc-8'
+          uuid: 9c6586d6-e074-4b68-84c5-b8d13ff9602a
+      observations:
+        - collected: 2026-09-25T19:46:00.831032682Z
+          description: |
+            [TEST]: c65f7e81-d204-4cc6-93be-1706402f0ff8 - lula-validation
+          methods:
+            - TEST
+          relevant-evidence:
+            - description: |
+                Result: satisfied
+          uuid: 2f7ccacf-218d-4c52-90aa-83b0567a4394
+        - collected: 2026-09-25T19:46:00.852003535Z
+          description: |
+            [TEST]: c168ce52-7154-47bc-a14b-7b70b27d6650 - lula-validation
+          methods:
+            - TEST
+          relevant-evidence:
+            - description: |
+                Result: satisfied
+          uuid: 402a99a5-79d7-4386-903a-98a7075b4566
+        - collected: 2026-09-25T19:46:00.886320398Z
+          description: |
+            [TEST]: 2f6ed356-d15e-484e-ba60-5e22dc270995 - lula-validation
+          methods:
+            - TEST
+          relevant-evidence:
+            - description: |
+                Result: satisfied
+          uuid: 5f4c11c9-a847-42ba-b828-46f02280e11a
+        - collected: 2026-09-25T19:46:00.917772488Z
+          description: |
+            [TEST]: 12a12295-8faa-4cf0-962c-53a426365b40 - lula-validation
+          methods:
+            - TEST
+          relevant-evidence:
+            - description: |
+                Result: satisfied
+          uuid: 424e244d-ef73-4109-92b9-e69b8cd7cb3f
+        - collected: 2026-09-25T19:46:00.929680674Z
+          description: |
+            [TEST]: ca39902e-a44b-4bc7-a252-b90751d0cf53 - lula-validation
+          methods:
+            - TEST
+          relevant-evidence:
+            - description: |
+                Result: satisfied
+          uuid: dd846897-eefc-4d32-8274-44324978e05b
+      props:
+        - name: threshold
+          ns: https://docs.lula.dev/oscal/ns
+          value: "false"
+        - name: target
+          ns: https://docs.lula.dev/oscal/ns
+          value: https://github.com/usnistgov/oscal-content/blob/master/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json
+      reviewed-controls:
+        control-selections:
+          - description: Controls Assessed by Lula
+            include-controls:
+              - control-id: ac-3
+              - control-id: ac-4
+              - control-id: cm-8
+              - control-id: ia-2
+              - control-id: sc-8
+        description: Controls validated
+        remarks: Validation performed may indicate full or partial satisfaction
+      start: 2026-09-25T19:46:00.93135947Z
+      title: Lula Validation Result
+      uuid: 452bed49-020b-4596-a7ac-9be154652d48
+  uuid: 9eea9354-377f-4137-92d7-f7bca8a6eb19

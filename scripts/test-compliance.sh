@@ -6,13 +6,16 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OSCAL_FILE="${ROOT_DIR}/docs/compliance/oscal-il5.yaml"
 OUTPUT_FILE="${ROOT_DIR}/docs/compliance/assessment-results.yaml"
 
-echo "=== Running DoD IL5 Lula Compliance Validation ==="
+export PATH="${HOME}/.local/bin:${PATH}"
+
+echo "=============================================================================="
+echo "          RUNNING DOD IL5 LULA COMPLIANCE VALIDATION                         "
+echo "=============================================================================="
 
 if ! command -v lula &>/dev/null; then
     echo "⚠️  Lula CLI is not found in PATH."
-    echo "ℹ️  To install: curl -fsSL https://raw.githubusercontent.com/defenseunicorns/lula/main/install.sh | bash"
-    echo "ℹ️  Or using pre-built binary in your environment."
-    exit 0
+    echo "ℹ️  Install lula or check ~/.local/bin/lula."
+    exit 1
 fi
 
 if [[ ! -f "${OSCAL_FILE}" ]]; then
@@ -20,7 +23,16 @@ if [[ ! -f "${OSCAL_FILE}" ]]; then
     exit 1
 fi
 
-echo "Validating cluster against NIST SP 800-53 Rev 5 (DoD IL5)..."
+# Use local kubeconfig if available and KUBECONFIG not already set
+if [[ -z "${KUBECONFIG:-}" && -f "${ROOT_DIR}/../uds-platform-prep/kubeconfig" ]]; then
+    export KUBECONFIG="${ROOT_DIR}/../uds-platform-prep/kubeconfig"
+fi
+
+echo "Validating target cluster against NIST SP 800-53 Rev 5 (DoD IL5)..."
+rm -f "${OUTPUT_FILE}"
 lula validate -f "${OSCAL_FILE}" -o "${OUTPUT_FILE}"
 
-echo "✅ Compliance validation completed. Results saved to ${OUTPUT_FILE}."
+echo "=============================================================================="
+echo " ✅ Compliance validation completed successfully!"
+echo " Findings saved to: ${OUTPUT_FILE}"
+echo "=============================================================================="

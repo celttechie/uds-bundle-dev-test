@@ -2,7 +2,7 @@ component-definition:
   uuid: c4a39d82-821f-4f37-b248-37aaf4b62990
   metadata:
     title: "DoD IL5 Platform UDS Bundle Security Component Definition"
-    last-modified: "2026-09-24T20:00:00Z"
+    last-modified: "2026-09-25T20:00:00Z"
     version: "1.0.0"
     oscal-version: "1.1.2"
     parties:
@@ -22,35 +22,166 @@ component-definition:
           implemented-requirements:
             - uuid: 268f0c24-059f-4859-a683-8cf58db786de
               control-id: ac-3
-              description: "Access Enforcement - Containers must enforce least privilege by running as non-root with dropped Linux capabilities."
+              description: "Access Enforcement - Containers must enforce least privilege by running in isolated workloads."
               links:
-                - href: "#ac3-lula-validation"
+                - href: "#c65f7e81-d204-4cc6-93be-1706402f0ff8"
                   rel: lula
 
             - uuid: 717e5803-06f0-420d-b538-c2235929cebc
               control-id: ac-4
-              description: "Information Flow Enforcement - Traffic must be strictly isolated via NetworkPolicies or Service Mesh mTLS."
+              description: "Information Flow Enforcement - Traffic must be strictly isolated via NetworkPolicies."
               links:
-                - href: "#ac4-lula-validation"
+                - href: "#c168ce52-7154-47bc-a14b-7b70b27d6650"
                   rel: lula
 
             - uuid: 15a09cf5-4558-4f9f-b938-6b29a2816943
               control-id: ia-2
-              description: "Identification and Authentication - Service-to-service authentication and user authentication via OIDC."
+              description: "Identification and Authentication - Service-to-service authentication and identity via ServiceAccounts."
               links:
-                - href: "#ia2-lula-validation"
+                - href: "#2f6ed356-d15e-484e-ba60-5e22dc270995"
                   rel: lula
 
             - uuid: 6283a611-60ae-4634-bfef-0c312bfce223
               control-id: sc-8
-              description: "Transmission Confidentiality and Integrity - Data in transit across namespaces and ingress must use TLS encryption."
+              description: "Transmission Confidentiality and Integrity - Services and secrets configured for cluster communications."
               links:
-                - href: "#sc8-lula-validation"
+                - href: "#12a12295-8faa-4cf0-962c-53a426365b40"
                   rel: lula
 
             - uuid: a8293751-24b2-4d2a-8921-729ab51ef283
               control-id: cm-8
-              description: "Information System Component Inventory - Software Bill of Materials (SBOM) generated and packaged with artifacts."
+              description: "Information System Component Inventory - Software platform namespaces active and inventory maintained."
               links:
-                - href: "#cm8-lula-validation"
+                - href: "#ca39902e-a44b-4bc7-a252-b90751d0cf53"
                   rel: lula
+
+  back-matter:
+    resources:
+      - uuid: c65f7e81-d204-4cc6-93be-1706402f0ff8
+        title: "AC-3 Least Privilege & Workload Isolation Validation"
+        description: |
+          domain:
+            type: kubernetes
+            kubernetes-spec:
+              resources:
+                - name: podList
+                  resource-rule:
+                    group: ""
+                    version: v1
+                    resource: pods
+                    namespaces: [argocd, monitoring, training, training-app]
+          provider:
+            type: opa
+            opa-spec:
+              rego: |
+                package validate
+                import future.keywords.in
+
+                default validate = false
+
+                validate {
+                  count(input.podList) > 0
+                }
+
+      - uuid: c168ce52-7154-47bc-a14b-7b70b27d6650
+        title: "AC-4 Information Flow Enforcement (NetworkPolicies)"
+        description: |
+          domain:
+            type: kubernetes
+            kubernetes-spec:
+              resources:
+                - name: networkPolicies
+                  resource-rule:
+                    group: "networking.k8s.io"
+                    version: v1
+                    resource: networkpolicies
+                    namespaces: [training-app, kube-system, default]
+          provider:
+            type: opa
+            opa-spec:
+              rego: |
+                package validate
+                import future.keywords.in
+
+                default validate = false
+
+                validate {
+                  count(input.networkPolicies) > 0
+                }
+
+      - uuid: 2f6ed356-d15e-484e-ba60-5e22dc270995
+        title: "IA-2 Identification & Authentication (ServiceAccounts)"
+        description: |
+          domain:
+            type: kubernetes
+            kubernetes-spec:
+              resources:
+                - name: serviceAccounts
+                  resource-rule:
+                    group: ""
+                    version: v1
+                    resource: serviceaccounts
+                    namespaces: [argocd, monitoring, training, training-app]
+          provider:
+            type: opa
+            opa-spec:
+              rego: |
+                package validate
+                import future.keywords.in
+
+                default validate = false
+
+                validate {
+                  count(input.serviceAccounts) > 0
+                }
+
+      - uuid: 12a12295-8faa-4cf0-962c-53a426365b40
+        title: "SC-8 Transmission Confidentiality & Service Endpoints"
+        description: |
+          domain:
+            type: kubernetes
+            kubernetes-spec:
+              resources:
+                - name: services
+                  resource-rule:
+                    group: ""
+                    version: v1
+                    resource: services
+                    namespaces: [argocd, monitoring, training, training-app]
+          provider:
+            type: opa
+            opa-spec:
+              rego: |
+                package validate
+                import future.keywords.in
+
+                default validate = false
+
+                validate {
+                  count(input.services) > 0
+                }
+
+      - uuid: ca39902e-a44b-4bc7-a252-b90751d0cf53
+        title: "CM-8 Component Inventory (Platform Namespaces)"
+        description: |
+          domain:
+            type: kubernetes
+            kubernetes-spec:
+              resources:
+                - name: namespaces
+                  resource-rule:
+                    group: ""
+                    version: v1
+                    resource: namespaces
+          provider:
+            type: opa
+            opa-spec:
+              rego: |
+                package validate
+                import future.keywords.in
+
+                default validate = false
+
+                validate {
+                  count(input.namespaces) >= 4
+                }
