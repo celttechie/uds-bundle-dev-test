@@ -11,9 +11,8 @@ variables:
     default: "monitoring"
   - name: GRAFANA_ADMIN_PASSWORD
     description: "Grafana admin password"
-    generate:
-      length: 32
-      character-sets: ["alphanumeric", "symbols"]
+    default: "prom-operator"
+    prompt: true
 
 components:
   - name: kube-prometheus-stack

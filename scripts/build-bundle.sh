@@ -11,13 +11,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${REPO_ROOT}/build"
-PACKAGES_DIR="${BUILD_DIR}/packages"
 
 echo "=============================================================================="
 echo "                   BUILDING UDS BUNDLE FOR AIR-GAP DELIVERY                   "
 echo "=============================================================================="
 
-mkdir -p "${PACKAGES_DIR}"
+mkdir -p "${BUILD_DIR}"
 
 # 1. Verify Prerequisites
 for tool in zarf uds; do
@@ -34,18 +33,15 @@ if [ -d "${REPO_ROOT}/packages" ]; then
   for pkg_dir in "${REPO_ROOT}/packages"/*; do
     if [ -d "${pkg_dir}" ] && [ -f "${pkg_dir}/zarf.yaml" ]; then
       echo "  -> Building package in: ${pkg_dir}"
-      (cd "${pkg_dir}" && zarf package create --confirm --output-directory "${PACKAGES_DIR}")
+      (cd "${pkg_dir}" && zarf package create --confirm --output .)
     fi
   done
-elif [ -f "${REPO_ROOT}/bundles/zarf.yaml" ]; then
-  echo "  -> Building demo Zarf package from bundles/zarf.yaml"
-  (cd "${REPO_ROOT}/bundles" && zarf package create --confirm --output-directory "${PACKAGES_DIR}")
 fi
 
 # 3. Create UDS Bundle
 echo "=== [2/2] Creating UDS Bundle Artifact ==="
 if [ -f "${REPO_ROOT}/bundles/uds-bundle.yaml" ]; then
-  (cd "${REPO_ROOT}/bundles" && uds create . --confirm --output-dir "${BUILD_DIR}")
+  (cd "${REPO_ROOT}/bundles" && uds create . --confirm -o "${BUILD_DIR}")
   echo "UDS Bundle created successfully in: ${BUILD_DIR}"
 else
   echo "ERROR: No uds-bundle.yaml found in ${REPO_ROOT}/bundles/"

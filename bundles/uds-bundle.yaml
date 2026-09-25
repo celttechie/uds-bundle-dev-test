@@ -5,21 +5,20 @@ metadata:
   description: "Air-gapped DoD IL5 platform bundle containing Argo CD, Observability, and Training App workloads"
   version: "0.1.0"
   architecture: amd64
-  authors:
-    - "Platform & Security Engineering Team"
+  authors: "Platform & Security Engineering Team"
 
 packages:
   # 1. Argo CD GitOps Engine
   - name: platform-argocd
-    repository: "local"
+    ref: "0.1.0"
     path: ../packages/argocd
 
   # 2. Observability Stack (Prometheus, Grafana, Alertmanager)
   - name: platform-monitoring
-    repository: "local"
+    ref: "0.1.0"
     path: ../packages/monitoring
 
   # 3. Mission / Training Microservices Workload
   - name: platform-training-app
-    repository: "local"
+    ref: "0.1.0"
     path: ../packages/training-app
