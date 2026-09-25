@@ -1,0 +1,56 @@
+component-definition:
+  uuid: c4a39d82-821f-4f37-b248-37aaf4b62990
+  metadata:
+    title: "DoD IL5 Platform UDS Bundle Security Component Definition"
+    last-modified: "2026-09-24T20:00:00Z"
+    version: "1.0.0"
+    oscal-version: "1.1.2"
+    parties:
+      - uuid: 5004e02c-16a6-4951-a040-0253734dfbc3
+        type: organization
+        name: "Platform & Mission Engineering"
+  components:
+    - uuid: b82f12a4-7f12-4c28-9821-6d7b29aa3110
+      type: software
+      title: "uds-platform-bundle"
+      description: "Air-gapped Kubernetes platform bundle comprising Argo CD, Observability (Prometheus/Grafana), and Training App workloads."
+      purpose: "Automated GitOps deployment and observability for mission-critical workloads under DoD IL5 requirements."
+      control-implementations:
+        - uuid: 8ffc80d0-c303-42be-82cd-f6d9170e54b2
+          source: "https://github.com/usnistgov/oscal-content/blob/master/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json"
+          description: "NIST SP 800-53 Rev 5 Controls for DoD Impact Level 5 Continuous Authorization"
+          implemented-requirements:
+            - uuid: 268f0c24-059f-4859-a683-8cf58db786de
+              control-id: ac-3
+              description: "Access Enforcement - Containers must enforce least privilege by running as non-root with dropped Linux capabilities."
+              links:
+                - href: "#ac3-lula-validation"
+                  rel: lula
+
+            - uuid: 717e5803-06f0-420d-b538-c2235929cebc
+              control-id: ac-4
+              description: "Information Flow Enforcement - Traffic must be strictly isolated via NetworkPolicies or Service Mesh mTLS."
+              links:
+                - href: "#ac4-lula-validation"
+                  rel: lula
+
+            - uuid: 15a09cf5-4558-4f9f-b938-6b29a2816943
+              control-id: ia-2
+              description: "Identification and Authentication - Service-to-service authentication and user authentication via OIDC."
+              links:
+                - href: "#ia2-lula-validation"
+                  rel: lula
+
+            - uuid: 6283a611-60ae-4634-bfef-0c312bfce223
+              control-id: sc-8
+              description: "Transmission Confidentiality and Integrity - Data in transit across namespaces and ingress must use TLS encryption."
+              links:
+                - href: "#sc8-lula-validation"
+                  rel: lula
+
+            - uuid: a8293751-24b2-4d2a-8921-729ab51ef283
+              control-id: cm-8
+              description: "Information System Component Inventory - Software Bill of Materials (SBOM) generated and packaged with artifacts."
+              links:
+                - href: "#cm8-lula-validation"
+                  rel: lula

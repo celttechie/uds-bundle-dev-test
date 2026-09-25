@@ -1,16 +1,25 @@
-# Air-Gapped UDS Bundle Definition
+# UDS Platform Bundle Definition
 kind: UDSBundle
 metadata:
-  name: airgap-core-workloads
-  description: "Self-contained air-gapped UDS bundle orchestrating Zarf packages and zero-trust services"
+  name: airgap-platform-stack
+  description: "Air-gapped DoD IL5 platform bundle containing Argo CD, Observability, and Training App workloads"
   version: "0.1.0"
   architecture: amd64
   authors:
-    - "Defense Unicorns & Platform Security Team"
+    - "Platform & Security Engineering Team"
 
 packages:
-  # Base UDS Core Workload
-  - name: airgap-demo-workload
+  # 1. Argo CD GitOps Engine
+  - name: platform-argocd
     repository: "local"
-    path: .
-    namespace: uds-demo
+    path: ../packages/argocd
+
+  # 2. Observability Stack (Prometheus, Grafana, Alertmanager)
+  - name: platform-monitoring
+    repository: "local"
+    path: ../packages/monitoring
+
+  # 3. Mission / Training Microservices Workload
+  - name: platform-training-app
+    repository: "local"
+    path: ../packages/training-app

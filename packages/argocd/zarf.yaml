@@ -1,0 +1,31 @@
+kind: ZarfPackageConfig
+metadata:
+  name: platform-argocd
+  description: "Argo CD GitOps engine packaged for air-gapped IL5 environments"
+  version: "0.1.0"
+  architecture: amd64
+
+variables:
+  - name: ARGOCD_NAMESPACE
+    description: "Namespace to deploy Argo CD"
+    default: "argocd"
+  - name: ARGOCD_ADMIN_PASSWORD
+    description: "Initial admin password for Argo CD"
+    generate:
+      length: 32
+      character-sets: ["alphanumeric", "symbols"]
+
+components:
+  - name: argocd
+    required: true
+    charts:
+      - name: argo-cd
+        url: https://argoproj.github.io/argo-helm
+        version: "5.51.6"
+        namespace: "###ZARF_VAR_ARGOCD_NAMESPACE###"
+        valuesFiles:
+          - values.yaml
+    images:
+      - quay.io/argoproj/argocd:v2.9.3
+      - ghcr.io/dexidp/dex:v2.37.0
+      - docker.io/redis:7.2.3-alpine
