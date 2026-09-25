@@ -1,0 +1,21 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-training-internal
+  namespace: training
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: training-workload
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/part-of: training-workload
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/part-of: training-workload
+    - toEntities:
+        - cluster
+        - host
+        - world

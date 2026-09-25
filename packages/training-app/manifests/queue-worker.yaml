@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: queue-worker
+  namespace: training
+  labels:
+    app: queue-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: queue-worker
+  template:
+    metadata:
+      labels:
+        app: queue-worker
+    spec:
+      containers:
+        - name: queue-worker
+          image: python:3.11-alpine
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cat << 'EOF' > worker.py
+              import time
+              import os
+
+              print("Starting queue-worker processor...")
+              while True:
+                  print("Processing job from queue: OK")
+                  time.sleep(10)
+              EOF
+              python3 worker.py
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

@@ -1,0 +1,31 @@
+kind: ZarfPackageConfig
+metadata:
+  name: platform-training-app
+  description: "Multi-tier microservices application (Frontend, API, Worker, Redis, Postgres) with NetworkPolicies"
+  version: "0.1.0"
+  architecture: amd64
+
+variables:
+  - name: APP_NAMESPACE
+    description: "Namespace to deploy the training application"
+    default: "training-app"
+
+components:
+  - name: training-workloads
+    required: true
+    manifests:
+      - name: training-app-manifests
+        namespace: "###ZARF_VAR_APP_NAMESPACE###"
+        files:
+          - manifests/namespace.yaml
+          - manifests/network-policies.yaml
+          - manifests/database-postgres.yaml
+          - manifests/cache-redis.yaml
+          - manifests/order-api.yaml
+          - manifests/queue-worker.yaml
+          - manifests/frontend.yaml
+    images:
+      - docker.io/library/nginx:alpine
+      - docker.io/library/python:3.11-alpine
+      - docker.io/library/redis:7-alpine
+      - docker.io/library/postgres:16-alpine
