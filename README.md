@@ -1,27 +1,45 @@
 # UDS Bundle Development & Test (`uds-bundle-dev-test`)
 
-A dedicated development and testing repository for authoring, packaging, and validating **Defense Unicorns UDS Bundles** and **Zarf Packages** targeted for air-gapped Kubernetes environments.
+[![Status: Active](https://img.shields.io/badge/Status-Active-brightgreen.svg)](#)
+[![Defense Unicorns: UDS Bundle](https://img.shields.io/badge/Defense%20Unicorns-UDS%20Bundle-black.svg)](#)
+[![Packaging: Zarf + Syft SBOM](https://img.shields.io/badge/Packaging-Zarf%20%2B%20Syft%20SBOM-blue.svg)](#)
+[![Tier: 3 Bundle Engineering](https://img.shields.io/badge/Tier%203-Bundle%20Engineering-blue.svg)](#)
+
+A dedicated developer workspace for authoring, packaging, and testing **Defense Unicorns UDS Bundles** and **Zarf Packages** on a connected machine before shipping them across the air-gap barrier.
+
+In an air-gapped delivery model, you need a clean separation of implementation layers:
+* **Tier 1 (Substrate Layer):** Provisions the isolated hardware or VM compute target ([`orangepi-airgapped`](https://github.com/celttechie/orangepi-airgapped) / [`airgapped-sandbox-vm`](https://github.com/celttechie/airgapped-sandbox-vm)).
+* **Tier 2 (Platform Prep Layer):** Prepares that target with the offline Kubernetes runtime and runs `zarf init` to stand up the in-cluster registry ([`uds-platform-prep`](https://github.com/celttechie/uds-platform-prep)).
+* **Tier 3 (Bundle & Workload Layer):** This repository. It authors modular `zarf.yaml` packages with automated SBOM generation, aggregates them into top-level `uds-bundle.yaml` bundles, and compiles self-contained `.tar.zst` artifacts.
+
+The resulting Tier 3 bundles are deployed directly onto the target system that was prepared by Tier 2 on top of Tier 1 infrastructure, executing `uds deploy` with zero external dependencies.
 
 ---
 
-## Architecture & Lifecycle Separation
+## 3-Tier Layered Hierarchy
 
-This repository is strictly focused on **Software & Bundle Engineering**. The hypervisor and air-gapped Kubernetes environment are managed independently in the `airgapped-sandbox-vm` repository.
+```mermaid
+flowchart TD
+    subgraph T1 ["Tier 1: Target Substrates (Underlying Compute Targets)"]
+        direction LR
+        OPI["orangepi-airgapped\n(Physical Bare-Metal ARM64 SBC)"]
+        KVM["airgapped-sandbox-vm\n(Nested KVM Hypervisor Sandbox)"]
+        AWS["AWS Infrastructure\n(EC2 Spot K3s / Managed EKS)"]
+    end
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  CONNECTED ENVIRONMENT (This Repo: uds-bundle-dev-test)     │
-│  • Author Zarf packages (zarf.yaml) & manifests             │
-│  • Assemble UDS Bundles (uds-bundle.yaml)                   │
-│  • Run `uds create` to package into immutable .tar.zst      │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ Transfer .tar.zst
-┌──────────────────────────────▼──────────────────────────────┐
-│  AIR-GAPPED TARGET (T5600 Sandbox / airgapped-sandbox-vm)   │
-│  • Running K3s / RKE2 cluster with zero WAN access          │
-│  • Run `uds deploy <bundle.tar.zst>` (Operator Persona)     │
-│  • Validate zero-trust policies, health probes, and Lula    │
-└─────────────────────────────────────────────────────────────┘
+    subgraph T2 ["Tier 2: Platform Preparation (uds-platform-prep)"]
+        direction LR
+        PREP["uds-platform-prep\n(Toolchain Ingestion • K3s/RKE2/Talos • In-Cluster zarf init)"]
+    end
+
+    subgraph T3 ["Tier 3: Software & Bundle Engineering (This Repo: uds-bundle-dev-test)"]
+        direction LR
+        DEV["uds-bundle-dev-test\n• Modular Zarf Package Authoring\n• UDS Bundle Assembly (.tar.zst)\n• Pre-flight Air-Gap Validation"]
+        LAKE["zarf-uds-lula-datalakehouse\n(Mission Lakehouse • Istio mTLS • Lula OSCAL ATO)"]
+    end
+
+    T1 ==>|"Clean, Isolated Target Ready"| T2
+    T2 ==>|"UDS-Ready Cluster"| T3
 ```
 
 For the architectural rationale, see [ADR 0001: Separation of Environment Infrastructure and UDS Bundle Lifecycles](file:///home/bjarrett/Projects/uds-bundle-dev-test/docs/adr/0001-separation-of-environment-and-bundle-lifecycle.md).
