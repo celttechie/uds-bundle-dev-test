@@ -939,6 +939,8 @@ def check_cluster_health(scenarios: dict[str, dict[str, Any]], ns: str, reveal: 
             parts = line.split()
             if len(parts) >= 3:
                 name, ready, status = parts[0], parts[1], parts[2]
+                if status == "Terminating":
+                    continue
                 if status != "Running" or ready.split("/")[0] != ready.split("/")[1]:
                     bad_pods.append(f"{name} ({ready}, {status})")
         if bad_pods:
@@ -971,7 +973,10 @@ def check_cluster_health(scenarios: dict[str, dict[str, Any]], ns: str, reveal: 
 
     # 4. Check Lula OSCAL Compliance
     print(f"{BOLD}[4/4] Running Lula DoD IL5 OSCAL Validation...{RESET}")
-    lula_res = run_cmd("lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml")
+    lula_res = run_cmd(
+        "rm -f docs/compliance/assessment-results.yaml && "
+        "lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml"
+    )
     eval_res = run_cmd("lula evaluate -f docs/compliance/assessment-results.yaml")
     if lula_res.returncode != 0 or eval_res.returncode != 0:
         print(f"  {RED}✗ Lula OSCAL compliance validation failed (check docs/compliance/assessment-results.yaml).{RESET}")
