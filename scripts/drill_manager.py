@@ -328,7 +328,7 @@ EOF"""
                 },
                 {
                     "phase": "Phase 4: Remediate & Verify (Fix Service Selector)",
-                    "prompt": f"Patch the `order-api` Service selector back to `app: order-api`.",
+                    "prompt": "Patch the `order-api` Service selector back to `app: order-api`.",
                     "recommended_cmd": f"kubectl patch svc order-api -n {ns} -p '{{\"spec\":{{\"selector\":{{\"app\":\"order-api\"}}}}}}'",
                     "hint": f"Run `kubectl patch svc order-api -n {ns} -p '{{\"spec\":{{\"selector\":{{\"app\":\"order-api\"}}}}}}'`.",
                     "explanation": "Kubernetes immediately repopulates the `Endpoints` slice with the running pod IPs.",
@@ -428,7 +428,7 @@ EOF"""
                 },
                 {
                     "phase": "Phase 4: Remediate & Verify (Fix Liveness Probe Path)",
-                    "prompt": f"Patch the `order-api` livenessProbe path back to `/healthz`.",
+                    "prompt": "Patch the `order-api` livenessProbe path back to `/healthz`.",
                     "recommended_cmd": f"kubectl patch deployment order-api -n {ns} --type='json' -p='[{{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/livenessProbe/httpGet/path\",\"value\":\"/healthz\"}}]'",
                     "hint": f"Run `kubectl rollout undo deployment/order-api -n {ns}` or patch `/healthz`.",
                     "explanation": "Liveness probes now return HTTP 200 and pod restarts cease.",
@@ -776,7 +776,7 @@ def heal_drill(sc_id: str, scenarios: dict[str, dict[str, Any]]) -> bool:
             state = json.loads(MYSTERY_STATE_FILE.read_text())
             if state.get("scenario_id") == sc_id:
                 MYSTERY_STATE_FILE.unlink()
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             pass
     return ok
 
@@ -1033,9 +1033,8 @@ def main() -> None:
         run_tutor(args.tutor, scenarios, inject_first=not args.no_inject)
     elif args.mystery:
         inject_mystery(scenarios)
-    elif args.check:
-        if not check_cluster_health(scenarios, ns, reveal=args.reveal):
-            sys.exit(1)
+    elif args.check and not check_cluster_health(scenarios, ns, reveal=args.reveal):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

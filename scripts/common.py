@@ -8,7 +8,6 @@ and subprocess execution helpers.
 import os
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 # ANSI Terminal Styling
 BOLD = "\033[1m"
@@ -72,7 +71,7 @@ def run_cmd(
     cmd: str,
     check: bool = False,
     capture: bool = True,
-    timeout: Optional[int] = 60,
+    timeout: int | None = 60,
 ) -> subprocess.CompletedProcess:
     """Execute a shell command with KUBECONFIG and toolchain PATH configured."""
     env = configure_kube_env()

@@ -47,7 +47,7 @@ jobs:
       - name: Lint & Compile Python Modules
         run: |
           python3 -m py_compile scripts/*.py tests/*.py
-          ruff check scripts/ tests/
+          ruff check --select E,F,W --ignore E501 scripts/ tests/
 
       - name: Validate Zarf, UDS Bundle, K8s Manifests & OSCAL Schema
         run: |
