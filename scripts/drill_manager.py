@@ -8,7 +8,6 @@ import argparse
 import json
 import random
 import sys
-from pathlib import Path
 from typing import Any
 
 from common import (
@@ -329,7 +328,7 @@ EOF"""
                 },
                 {
                     "phase": "Phase 4: Remediate & Verify (Fix Service Selector)",
-                    "prompt": f"Patch the `order-api` Service selector back to `app: order-api`.",
+                    "prompt": "Patch the `order-api` Service selector back to `app: order-api`.",
                     "recommended_cmd": f"kubectl patch svc order-api -n {ns} -p '{{\"spec\":{{\"selector\":{{\"app\":\"order-api\"}}}}}}'",
                     "hint": f"Run `kubectl patch svc order-api -n {ns} -p '{{\"spec\":{{\"selector\":{{\"app\":\"order-api\"}}}}}}'`.",
                     "explanation": "Kubernetes immediately repopulates the `Endpoints` slice with the running pod IPs.",
@@ -429,7 +428,7 @@ EOF"""
                 },
                 {
                     "phase": "Phase 4: Remediate & Verify (Fix Liveness Probe Path)",
-                    "prompt": f"Patch the `order-api` livenessProbe path back to `/healthz`.",
+                    "prompt": "Patch the `order-api` livenessProbe path back to `/healthz`.",
                     "recommended_cmd": f"kubectl patch deployment order-api -n {ns} --type='json' -p='[{{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/livenessProbe/httpGet/path\",\"value\":\"/healthz\"}}]'",
                     "hint": f"Run `kubectl rollout undo deployment/order-api -n {ns}` or patch `/healthz`.",
                     "explanation": "Liveness probes now return HTTP 200 and pod restarts cease.",
@@ -777,7 +776,7 @@ def heal_drill(sc_id: str, scenarios: dict[str, dict[str, Any]]) -> bool:
             state = json.loads(MYSTERY_STATE_FILE.read_text())
             if state.get("scenario_id") == sc_id:
                 MYSTERY_STATE_FILE.unlink()
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             pass
     return ok
 
@@ -939,6 +938,8 @@ def check_cluster_health(scenarios: dict[str, dict[str, Any]], ns: str, reveal: 
             parts = line.split()
             if len(parts) >= 3:
                 name, ready, status = parts[0], parts[1], parts[2]
+                if status == "Terminating":
+                    continue
                 if status != "Running" or ready.split("/")[0] != ready.split("/")[1]:
                     bad_pods.append(f"{name} ({ready}, {status})")
         if bad_pods:
@@ -969,12 +970,15 @@ def check_cluster_health(scenarios: dict[str, dict[str, Any]], ns: str, reveal: 
     else:
         print(f"  {GREEN}✓ No stuck Pending PVCs in '{ns}'.{RESET}")
 
-    # 4. Check Lula OSCAL Compliance
+    # 4. Check Lula OSCAL Compliance (compare baseline vs live cluster state)
     print(f"{BOLD}[4/4] Running Lula DoD IL5 OSCAL Validation...{RESET}")
-    lula_res = run_cmd("lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml")
-    eval_res = run_cmd("lula evaluate -f docs/compliance/assessment-results.yaml")
+    lula_res = run_cmd(
+        "cp docs/compliance/assessment-results.yaml /tmp/lula-drill-assessment.yaml && "
+        "lula validate -f docs/compliance/oscal-il5.yaml -o /tmp/lula-drill-assessment.yaml"
+    )
+    eval_res = run_cmd("lula evaluate -f /tmp/lula-drill-assessment.yaml")
     if lula_res.returncode != 0 or eval_res.returncode != 0:
-        print(f"  {RED}✗ Lula OSCAL compliance validation failed (check docs/compliance/assessment-results.yaml).{RESET}")
+        print(f"  {RED}✗ Lula OSCAL compliance validation failed (control drift detected).{RESET}")
         checks_passed = False
     else:
         print(f"  {GREEN}✓ All NIST SP 800-53 Rev 5 Lula controls are SATISFIED.{RESET}")
@@ -1029,9 +1033,8 @@ def main() -> None:
         run_tutor(args.tutor, scenarios, inject_first=not args.no_inject)
     elif args.mystery:
         inject_mystery(scenarios)
-    elif args.check:
-        if not check_cluster_health(scenarios, ns, reveal=args.reveal):
-            sys.exit(1)
+    elif args.check and not check_cluster_health(scenarios, ns, reveal=args.reveal):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

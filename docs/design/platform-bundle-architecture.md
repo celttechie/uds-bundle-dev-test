@@ -22,6 +22,9 @@ The **Platform UDS Bundle** bundles core platform services (GitOps, Observabilit
 
 ```
 uds-bundle-dev-test/
+├── .github/
+│   └── workflows/
+│       └── ci.yml              # GitHub Actions CI: Lula lint, KinD runtime gate, unit tests, Gitleaks
 ├── bundles/
 │   └── uds-bundle.yaml         # Orchestrates the 3 packages & exports/imports
 ├── packages/
@@ -33,17 +36,24 @@ uds-bundle-dev-test/
 │   │   └── values/             # Prometheus / Grafana dashboards & alerts
 │   └── training-app/
 │       ├── zarf.yaml           # Zarf package for mission app
-│       └── manifests/          # Kubernetes manifests / kustomization
+│       └── manifests/          # Kubernetes manifests (Namespace, NetPol, Workloads)
 ├── scripts/
-│   ├── build-bundle.sh         # Builds individual Zarf packages + UDS bundle
-│   ├── test-deploy.sh          # Local cluster deploy verification
-│   └── verify-airgap.sh        # Air-gap zero-egress auditor
+│   ├── common.py               # KUBECONFIG discovery, SSH tunnel auto-recovery & runner
+│   ├── drill_manager.py        # Interactive CLI Tutor & Chaos Injection Engine
+│   ├── build-bundle.sh         # Builds individual Zarf packages + UDS bundle (.tar.zst)
+│   ├── test-deploy.sh          # Cluster deploy verification
+│   ├── test-compliance.sh      # Lula OSCAL IL5 compliance validator
+│   └── verify-airgap.sh        # Air-gap zero-egress auditor (auto-delegated over SSH)
 ├── docs/
-│   ├── adr/
-│   │   ├── 0001-separation-of-environment-and-bundle-lifecycle.md
-│   │   └── 0002-modular-zarf-packages-and-platform-bundle-design.md
-│   └── design/
-│       └── platform-bundle-architecture.md
+│   ├── adr/                    # Architecture Decision Records (0001–0003)
+│   ├── compliance/             # NIST SP 800-53 Rev 5 OSCAL 1.1.2 component & assessment
+│   │   ├── oscal-il5.yaml
+│   │   └── assessment-results.yaml
+│   ├── design/
+│   │   └── platform-bundle-architecture.md
+│   └── troubleshooting-drills/ # CLI diagnostic field manual & scenario walkthroughs
+├── tests/                      # Automated unit, OSCAL schema, and shift-left IL5 test suite
+├── Makefile                    # Unified developer & drill CLI interface
 └── README.md
 ```
 
@@ -84,6 +94,28 @@ uds-bundle-dev-test/
 
 ## 4. Lifecycle & Build Pipeline
 
-1. **Package Compilation**: Each package in `packages/*` is packaged using `zarf package create`.
-2. **Bundle Assembly**: `uds create bundles/` bundles all package `.tar.zst` files into a single bundle `.tar.zst`.
-3. **Air-Gap Ingestion**: The bundle archive is transferred to the air-gapped target host and deployed with `uds deploy <bundle-archive>`.
+1. **Pre-Commit & CI Validation**: Automated linting (`make lint`), OSCAL schema validation (`lula tools lint`), and static shift-left IL5 control assertions (`make test`) run on every PR.
+2. **KinD Ephemeral Compliance Gate**: GitHub Actions deploys the workload manifests to an ephemeral KinD cluster and executes runtime `lula validate` against DoD IL5 NIST 800-53 controls.
+3. **Package Compilation**: Each package in `packages/*` is packaged using `zarf package create`.
+4. **Bundle Assembly**: `uds create bundles/` bundles all package `.tar.zst` files into a single bundle `.tar.zst`.
+5. **Air-Gap Ingestion & Delivery**: The bundle archive is transferred to the air-gapped target host (e.g. Dell T5600 `airgapped-sandbox-hypervisor`) and deployed with `uds deploy <bundle-archive>`.
+
+---
+
+## 5. Continuous Compliance-as-Code with Lula
+
+The platform bundle natively integrates with **Defense Unicorns Lula** to achieve Continuous Authority to Operate (cATO):
+
+- **OSCAL Component Definition** (`docs/compliance/oscal-il5.yaml`): Formally specifies how the platform stack satisfies NIST SP 800-53 Rev 5 controls (`AC-3`, `AC-4`, `IA-2`, `SC-8`, `CM-8`) with embedded OPA Rego policies.
+- **Continuous Assessment Results** (`docs/compliance/assessment-results.yaml`): Version-controlled, cryptographically verifiable assessment artifact tracking satisfied controls and providing an immutable audit trail.
+- **Air-Gap Runtime Audit** (`make compliance`): Evaluates live cluster resources against OSCAL controls without requiring internet access.
+
+---
+
+## 6. Interactive CLI Troubleshooting Tutor & Chaos Engine
+
+To train platform engineers and validate incident response in disconnected environments, the repository includes a chaos injection and diagnostic tutoring engine (`scripts/drill_manager.py`):
+
+- **10 Diagnostic Scenarios**: Spans Zarf/Air-gap image seeding, mutating webhook bypass, zero-trust NetworkPolicy blocks, Service targetPort/selector mismatches, OOMKills, liveness probe loops, unschedulable pods, pending PVCs, and Lula compliance drift.
+- **4-Phase Diagnostic Protocol**: Structured triage loop: *Detect* $\rightarrow$ *Isolate* $\rightarrow$ *Root Cause* $\rightarrow$ *Remediate & Verify*.
+- **Mystery Fault Injection**: Blind chaos mode (`make drill-mystery`) to diagnose and resolve unannounced platform failures from scratch.

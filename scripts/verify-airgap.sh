@@ -8,6 +8,15 @@
 
 set -uo pipefail
 
+if [[ "$(hostname)" != "airgapped-sandbox-hypervisor" && "${AIRGAP_LOCAL_FORCE:-0}" != "1" ]]; then
+  SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  TARGET_HOST="${TARGET_HOST:-10.160.0.34}"
+  TARGET_USER="${TARGET_USER:-bjarrett}"
+  JUMP_HOST="${JUMP_HOST:-t5600}"
+  SSH_KEY="${SSH_KEY:-${HOME}/.ssh/id_sandbox_hypervisor_ed25519}"
+  exec ssh -o StrictHostKeyChecking=no -J "${JUMP_HOST}" -i "${SSH_KEY}" "${TARGET_USER}@${TARGET_HOST}" "bash -s" < "${SCRIPT_PATH}"
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'

@@ -8,7 +8,6 @@ and subprocess execution helpers.
 import os
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 # ANSI Terminal Styling
 BOLD = "\033[1m"
@@ -25,6 +24,30 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PREP_KUBECONFIG = REPO_ROOT.parent / "uds-platform-prep" / "kubeconfig"
 
 
+def ensure_sandbox_tunnel(kubeconfig_path: Path) -> None:
+    """If kubeconfig uses 127.0.0.1:16443, ensure the SSH tunnel to t5600 -> 10.160.0.34:6443 is up."""
+    try:
+        text = kubeconfig_path.read_text()
+    except OSError:
+        return
+    if "127.0.0.1:16443" not in text:
+        return
+
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        if sock.connect_ex(("127.0.0.1", 16443)) == 0:
+            return
+
+    subprocess.run(
+        "ssh -f -N -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -L 16443:10.160.0.34:6443 t5600 </dev/null >/dev/null 2>&1",
+        shell=True,
+        check=False,
+        timeout=5,
+    )
+
+
 def configure_kube_env() -> dict[str, str]:
     """Ensure KUBECONFIG and local binary paths (~/.local/bin) are available."""
     env = os.environ.copy()
@@ -39,6 +62,7 @@ def configure_kube_env() -> dict[str, str]:
 
     if not env.get("KUBECONFIG") and PREP_KUBECONFIG.is_file():
         env["KUBECONFIG"] = str(PREP_KUBECONFIG)
+        ensure_sandbox_tunnel(PREP_KUBECONFIG)
 
     return env
 
@@ -47,7 +71,7 @@ def run_cmd(
     cmd: str,
     check: bool = False,
     capture: bool = True,
-    timeout: Optional[int] = 60,
+    timeout: int | None = 60,
 ) -> subprocess.CompletedProcess:
     """Execute a shell command with KUBECONFIG and toolchain PATH configured."""
     env = configure_kube_env()
@@ -84,21 +108,21 @@ def detect_training_namespace(default: str = "training-app", query_cluster: bool
         return default
 
     res = run_cmd(
-        "kubectl get ns training-app --request-timeout=2s -o name 2>/dev/null",
+        "kubectl get deploy order-api -n training-app --request-timeout=2s -o name 2>/dev/null",
         check=False,
         capture=True,
         timeout=3,
     )
-    if res.returncode == 0 and "training-app" in (res.stdout or ""):
+    if res.returncode == 0 and "order-api" in (res.stdout or ""):
         return "training-app"
 
     res_alt = run_cmd(
-        "kubectl get ns training --request-timeout=2s -o name 2>/dev/null",
+        "kubectl get deploy order-api -n training --request-timeout=2s -o name 2>/dev/null",
         check=False,
         capture=True,
         timeout=3,
     )
-    if res_alt.returncode == 0 and "training" in (res_alt.stdout or ""):
+    if res_alt.returncode == 0 and "order-api" in (res_alt.stdout or ""):
         return "training"
 
     return default

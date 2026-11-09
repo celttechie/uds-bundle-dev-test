@@ -49,22 +49,28 @@ For the architectural rationale, see [ADR 0001: Separation of Environment Infras
 
 ```
 uds-bundle-dev-test/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                  # GitHub Actions CI: Lula lint, KinD runtime gate, unit tests, Gitleaks
 ├── bundles/                        # Top-level UDS bundle definitions
 │   ├── uds-bundle.yaml             # Bundle orchestrating Zarf packages & dependencies
 │   └── zarf.yaml                   # Demo / local package definition
 ├── packages/                       # Modular Zarf packages (argocd, monitoring, training-app)
 ├── scripts/                        # Build, compliance, and chaos/tutor automation
-│   ├── common.py                   # KUBECONFIG discovery & terminal utilities
+│   ├── common.py                   # KUBECONFIG discovery, SSH tunnel auto-recovery & runner
 │   ├── drill_manager.py            # Interactive CLI Tutor & Chaos Injection Engine
 │   ├── build-bundle.sh             # Builds Zarf packages and creates .tar.zst bundle
 │   ├── test-deploy.sh              # Deploys the compiled UDS bundle to target cluster
 │   ├── test-compliance.sh          # Runs Lula OSCAL IL5 compliance validation
-│   └── verify-airgap.sh            # Audits network isolation / zero egress
+│   └── verify-airgap.sh            # Audits network isolation / zero egress (auto-delegates via SSH)
 ├── docs/                           # Architecture decision records, OSCAL, & drill runbooks
 │   ├── adr/                        # Architectural Decision Records (0001–0003)
-│   ├── compliance/oscal-il5.yaml   # NIST SP 800-53 Rev 5 Lula OSCAL component definition
-│   └── troubleshooting-drills/     # 4-Phase CLI Diagnostic Runbooks
-├── tests/                          # Automated unit & schema test suite
+│   ├── compliance/                 # NIST SP 800-53 Rev 5 OSCAL 1.1.2 component & assessment
+│   │   ├── oscal-il5.yaml
+│   │   └── assessment-results.yaml
+│   ├── design/                     # Platform bundle architectural specifications
+│   └── troubleshooting-drills/     # 4-Phase CLI Diagnostic Field Manual
+├── tests/                          # Automated unit, OSCAL schema, and shift-left IL5 test suite
 ├── Makefile                        # Unified CLI workflow entrypoint
 └── README.md
 ```
@@ -77,16 +83,44 @@ uds-bundle-dev-test/
 # 1. View all available Make targets
 make help
 
-# 2. Build modular Zarf packages and assemble the UDS bundle (.tar.zst)
+# 2. Run local linting gates (ShellCheck, Python syntax, YAML, and Lula OSCAL linting)
+make lint
+
+# 3. Run automated unit, schema, and shift-left DoD IL5 compliance assertions
+make test
+
+# 4. Build modular Zarf packages and assemble the UDS bundle (.tar.zst)
 make build
 
-# 3. Verify strict zero-egress air-gap isolation and deploy the UDS bundle
+# 5. Verify strict zero-egress air-gap isolation and deploy the UDS bundle
 make verify-airgap
 make deploy
 
-# 4. Validate live cluster state against DoD IL5 NIST 800-53 controls using Lula
+# 6. Check remote cluster status (nodes, pods, and services)
+make status
+
+# 7. Validate live cluster state against DoD IL5 NIST 800-53 controls using Lula
 make compliance
 ```
+
+---
+
+## 🔒 Automated CI/CD & Defense Unicorns Lula Compliance Architecture
+
+This repository implements Defense Unicorns' recommended **3-tier automated compliance and quality architecture** across GitHub Actions ([`.github/workflows/ci.yml`](file:///home/bjarrett/Projects/uds-bundle-dev-test/.github/workflows/ci.yml)) and local toolchains:
+
+1. **Tier 1 — Shift-Left Schema & Model Linting (`make lint` / CI):**
+   * Validates OSCAL `component-definition` and `assessment-results` models against the official NIST schema using `lula tools lint`.
+   * Lints bash automation scripts with `shellcheck` and Python modules with `ruff` and `py_compile`.
+   * Scans for committed secrets with `gitleaks`.
+2. **Tier 2 — Static Manifest Compliance Assertions (`make test` / CI):**
+   * Statically audits all `packages/training-app/manifests/*.yaml` for NIST SP 800-53 controls:
+     * **AC-3 (Least Privilege):** Verifies all containers enforce `securityContext.allowPrivilegeEscalation: false`.
+     * **AC-4 (Information Flow):** Verifies zero-trust `NetworkPolicy` ingress and egress enforcement.
+     * **SC-8 & CM-8:** Audits service definitions, component namespaces, and confirms baseline assessment findings are satisfied.
+3. **Tier 3 — Ephemeral KinD Runtime Compliance Gate (CI) & Disconnected Live Cluster (CD):**
+   * **In CI:** Spins up an ephemeral Kubernetes cluster (`kind-action`), deploys workload manifests, and runs live `lula validate -f docs/compliance/oscal-il5.yaml` against the running Kubernetes API, failing the build on any control regression.
+   * **In Field / Air-Gap:** Runs live compliance validation against the target cluster (`make compliance`) and continuous triage through `make drill-check`.
 
 ---
 
