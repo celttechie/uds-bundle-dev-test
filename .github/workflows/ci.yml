@@ -102,6 +102,7 @@ jobs:
 
       - name: Deploy Training App Workloads to Ephemeral Cluster
         run: |
+          kubectl apply -f packages/training-app/manifests/namespace.yaml
           kubectl apply -f packages/training-app/manifests/
           # Wait up to 60s for order-api deployment availability
           kubectl rollout status deployment/order-api -n training-app --timeout=60s || true
