@@ -17,3 +17,9 @@ build/
 *.key
 id_rsa*
 known_hosts
+
+# Python & Drill State
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.active_mystery_drill.json

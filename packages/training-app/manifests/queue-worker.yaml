@@ -2,9 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: queue-worker
-  namespace: training
+  namespace: training-app
   labels:
     app: queue-worker
+    app.kubernetes.io/part-of: training-workload
 spec:
   replicas: 1
   selector:
@@ -14,15 +15,18 @@ spec:
     metadata:
       labels:
         app: queue-worker
+        app.kubernetes.io/part-of: training-workload
     spec:
       containers:
         - name: queue-worker
           image: python:3.11-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
           command:
             - /bin/sh
             - -c
             - |
-              cat << 'EOF' > worker.py
+              cat << 'EOF' > /tmp/worker.py
               import time
               import os
 
@@ -31,7 +35,7 @@ spec:
                   print("Processing job from queue: OK")
                   time.sleep(10)
               EOF
-              python3 worker.py
+              python3 /tmp/worker.py
           resources:
             requests:
               cpu: 50m

@@ -70,17 +70,29 @@ component-definition:
                     version: v1
                     resource: pods
                     namespaces: [argocd, monitoring, training, training-app]
+                - name: trainingDeploys
+                  resource-rule:
+                    group: "apps"
+                    version: v1
+                    resource: deployments
+                    namespaces: [training, training-app]
           provider:
             type: opa
             opa-spec:
               rego: |
                 package validate
+                import future.keywords.every
                 import future.keywords.in
 
                 default validate = false
 
                 validate {
                   count(input.podList) > 0
+                  every dep in input.trainingDeploys {
+                    every c in dep.spec.template.spec.containers {
+                      object.get(object.get(c, "securityContext", {}), "allowPrivilegeEscalation", false) == false
+                    }
+                  }
                 }
 
       - uuid: c168ce52-7154-47bc-a14b-7b70b27d6650
