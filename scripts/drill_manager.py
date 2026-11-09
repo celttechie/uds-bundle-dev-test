@@ -8,7 +8,6 @@ import argparse
 import json
 import random
 import sys
-from pathlib import Path
 from typing import Any
 
 from common import (
@@ -971,15 +970,15 @@ def check_cluster_health(scenarios: dict[str, dict[str, Any]], ns: str, reveal: 
     else:
         print(f"  {GREEN}✓ No stuck Pending PVCs in '{ns}'.{RESET}")
 
-    # 4. Check Lula OSCAL Compliance
+    # 4. Check Lula OSCAL Compliance (compare baseline vs live cluster state)
     print(f"{BOLD}[4/4] Running Lula DoD IL5 OSCAL Validation...{RESET}")
     lula_res = run_cmd(
-        "rm -f docs/compliance/assessment-results.yaml && "
-        "lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml"
+        "cp docs/compliance/assessment-results.yaml /tmp/lula-drill-assessment.yaml && "
+        "lula validate -f docs/compliance/oscal-il5.yaml -o /tmp/lula-drill-assessment.yaml"
     )
-    eval_res = run_cmd("lula evaluate -f docs/compliance/assessment-results.yaml")
+    eval_res = run_cmd("lula evaluate -f /tmp/lula-drill-assessment.yaml")
     if lula_res.returncode != 0 or eval_res.returncode != 0:
-        print(f"  {RED}✗ Lula OSCAL compliance validation failed (check docs/compliance/assessment-results.yaml).{RESET}")
+        print(f"  {RED}✗ Lula OSCAL compliance validation failed (control drift detected).{RESET}")
         checks_passed = False
     else:
         print(f"  {GREEN}✓ All NIST SP 800-53 Rev 5 Lula controls are SATISFIED.{RESET}")

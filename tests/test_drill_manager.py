@@ -139,6 +139,74 @@ class TestDrillManager(unittest.TestCase):
         )
         self.assertIn("allowPrivilegeEscalation", ac3_res["description"])
 
+    def test_shift_left_il5_compliance_controls(self) -> None:
+        """
+        Shift-left compliance gate: statically enforce DoD IL5 NIST 800-53 controls
+        (AC-3, AC-4, SC-8, CM-8) against packages/training-app/manifests/*.yaml
+        and verify baseline assessment-results.yaml has zero 'not-satisfied' findings.
+        """
+        manifests_dir = REPO_ROOT / "packages" / "training-app" / "manifests"
+        workloads = []
+        netpols = []
+        services = []
+        namespaces = []
+
+        for mf in sorted(manifests_dir.glob("*.yaml")):
+            for doc in yaml.safe_load_all(mf.read_text()):
+                if not doc:
+                    continue
+                kind = doc.get("kind")
+                if kind in ("Deployment", "StatefulSet"):
+                    workloads.append((mf.name, doc))
+                elif kind == "NetworkPolicy":
+                    netpols.append((mf.name, doc))
+                elif kind == "Service":
+                    services.append((mf.name, doc))
+                elif kind == "Namespace":
+                    namespaces.append((mf.name, doc))
+
+        # AC-3: Every container in every Deployment/StatefulSet must explicitly set allowPrivilegeEscalation: false
+        self.assertGreaterEqual(len(workloads), 5, "Expected at least 5 workloads in training-app")
+        for filename, wl in workloads:
+            wl_name = wl["metadata"]["name"]
+            containers = wl["spec"]["template"]["spec"]["containers"]
+            for c in containers:
+                sec_ctx = c.get("securityContext", {})
+                self.assertIn(
+                    "allowPrivilegeEscalation",
+                    sec_ctx,
+                    f"AC-3 violation in {filename} ({wl_name}/{c['name']}): missing securityContext.allowPrivilegeEscalation",
+                )
+                self.assertFalse(
+                    sec_ctx["allowPrivilegeEscalation"],
+                    f"AC-3 violation in {filename} ({wl_name}/{c['name']}): allowPrivilegeEscalation must be false",
+                )
+
+        # AC-4: NetworkPolicies must exist and enforce Ingress + Egress
+        self.assertGreaterEqual(len(netpols), 1, "AC-4 violation: missing NetworkPolicy in training-app")
+        for filename, np in netpols:
+            policy_types = np.get("spec", {}).get("policyTypes", [])
+            self.assertIn("Ingress", policy_types, f"AC-4 violation in {filename}: missing Ingress policyType")
+            self.assertIn("Egress", policy_types, f"AC-4 violation in {filename}: missing Egress policyType")
+
+        # SC-8 & CM-8: Services and Namespace inventory
+        self.assertGreaterEqual(len(services), 4, "SC-8 violation: missing required Service definitions")
+        self.assertEqual(len(namespaces), 1, "CM-8 violation: missing Namespace definition")
+
+        # Verify committed OSCAL Assessment Results artifact has all findings satisfied
+        ar_path = REPO_ROOT / "docs" / "compliance" / "assessment-results.yaml"
+        ar_data = yaml.safe_load(ar_path.read_text())
+        results = ar_data["assessment-results"]["results"]
+        self.assertGreaterEqual(len(results), 1)
+        for res in results:
+            for finding in res.get("findings", []):
+                state = finding.get("target", {}).get("status", {}).get("state")
+                self.assertEqual(
+                    state,
+                    "satisfied",
+                    f"Unsatisfied control in assessment-results.yaml: {finding.get('target', {}).get('target-id')}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

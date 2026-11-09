@@ -85,6 +85,17 @@ drill-verify: ## Observe live symptoms of a scenario (Usage: make drill-verify S
 drill-heal: ## Heal a scenario or all scenarios (Usage: make drill-heal SCENARIO=<id|all>)
 	@python3 scripts/drill_manager.py --heal "$(SCENARIO)"
 
+.PHONY: lint
+lint: ## Lint shell scripts, Python modules, and Zarf/UDS/OSCAL YAML manifests
+	@shellcheck scripts/*.sh
+	@python3 -m py_compile scripts/*.py tests/*.py
+	@python3 -c 'import pathlib, yaml; [list(yaml.safe_load_all(p.read_text())) for pat in ("bundles/*.yaml", "packages/**/*.yaml", "docs/compliance/*.yaml", ".github/workflows/*.yml") for p in sorted(pathlib.Path(".").glob(pat))]'
+	@PATH="$$HOME/.local/bin:$$HOME/Projects/uds-platform-prep/payloads/bin:$$PATH"; \
+	if command -v lula >/dev/null 2>&1; then \
+		lula tools lint -f docs/compliance/oscal-il5.yaml,docs/compliance/assessment-results.yaml; \
+	fi
+	@echo "✓ All shell scripts, Python modules, and Lula OSCAL / YAML manifests passed lint checks."
+
 .PHONY: test
 test: ## Run automated unit and schema tests for the drill engine and OSCAL rules
 	@python3 -m unittest discover -v -s tests

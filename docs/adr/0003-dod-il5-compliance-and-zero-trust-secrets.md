@@ -14,8 +14,11 @@ Key architectural challenges include:
 
 1. **Shift-Left Compliance via Lula (OSCAL-as-Code)**:
    - Define a formal OSCAL (Open Security Controls Assessment Language) Component Definition in `docs/compliance/oscal-il5.yaml`.
-   - Embed automated validation rules using Defense Unicorns' **Lula** framework to assess live cluster states against NIST SP 800-53 Rev 5 controls (AC-3, AC-4, IA-2, SC-8, SC-28, CM-8).
-   - Provide an automated test script (`scripts/test-compliance.sh`) to execute `lula validate` and generate `assessment-results.yaml`.
+   - Embed automated validation rules using Defense Unicorns' **Lula** framework to assess live cluster states against NIST SP 800-53 Rev 5 controls (AC-3, AC-4, IA-2, SC-8, CM-8).
+   - Enforce automated quality gates in GitHub Actions (`.github/workflows/ci.yml`):
+     - `lula tools lint` validates OSCAL 1.1.2 schema compliance.
+     * Ephemeral KinD cluster validates runtime compliance before code can be merged into `main`.
+   - Provide an automated test script (`scripts/test-compliance.sh` / `make compliance`) to execute `lula validate` and generate `assessment-results.yaml`.
 
 2. **Zero-Trust Secrets & Credential Management**:
    - **Dynamic Zarf Generation**: Use Zarf's built-in cryptographic generator for bootstrap credentials where external secrets are not supplied.
