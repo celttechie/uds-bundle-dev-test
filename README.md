@@ -161,4 +161,11 @@ make drill-heal SCENARIO=all
 | **Compute** | `comp-probe-fail` | `kubectl` | Breaks `order-api` HTTP livenessProbe path (`/healthz-broken-path`), causing HTTP 404 probe kills. |
 | **Compute** | `comp-unschedulable` | `kubectl` | Adds an unsatisfiable `nodeSelector` to `order-api`, leaving new pods stuck in `Pending`. |
 | **Storage** | `stor-pvc-pending` | `kubectl` | Creates a `PersistentVolumeClaim` requesting a non-existent `StorageClass` (`non-existent-nvme-sc`). |
-| **Lula / Security** | `sec-lula-drift` | `lula`, `kubectl` | Patches `order-api` with `allowPrivilegeEscalation: true`, violating NIST 800-53 `AC-3` in [`oscal-il5.yaml`](file:///home/bjarrett/Projects/uds-bundle-dev-test/docs/compliance/oscal-il5.yaml). |
+| **Lula / Security** | `sec-lula-drift` | `lula`, `kubectl` | Patches `order-api` with `allowPrivilegeEscalation: true`, violating NIST 800-53 `AC-3` in [`oscal-il5.yaml`](docs/compliance/oscal-il5.yaml). |
+
+---
+
+## 🗺️ Roadmap & Capabilities Backlog
+
+For upcoming modular enhancements and capability tracks (Argo CD GitOps, automated release packaging, expanded DoD IL5 controls, and additional platform packages), see the [Capabilities Roadmap](docs/ROADMAP.md).
+
