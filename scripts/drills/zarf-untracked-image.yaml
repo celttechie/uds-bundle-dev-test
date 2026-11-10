@@ -1,0 +1,40 @@
+id: zarf-untracked-image
+domain: Zarf/Air-Gap
+tools:
+- kubectl
+- zarf
+title: Unseeded Container Image Tag in Air-Gap (ImagePullBackOff)
+description: Patches order-api in '${NAMESPACE}' to request an image tag ('python:3.11-unseeded-airgap') that was never packaged
+  into the internal Zarf registry.
+symptoms: New order-api replica is stuck in ErrImagePull / ImagePullBackOff because the internal Zarf registry (127.0.0.1:31999)
+  does not have the requested tag and WAN egress is blocked.
+inject_cmds:
+- kubectl set image deployment/order-api order-api=python:3.11-unseeded-airgap -n ${NAMESPACE}
+heal_cmds:
+- kubectl set image deployment/order-api order-api=python:3.11-alpine -n ${NAMESPACE}
+verify_cmd: kubectl get pods -n ${NAMESPACE} -l app=order-api
+tutor_steps:
+- phase: 'Phase 1: Detect (Spot the Failing Pod)'
+  prompt: Check pod statuses in the '${NAMESPACE}' namespace to see which workload is failing.
+  recommended_cmd: kubectl get pods -n ${NAMESPACE} -o wide
+  hint: Run `kubectl get pods -n ${NAMESPACE} -o wide` and look for ErrImagePull or ImagePullBackOff.
+  explanation: Notice that an order-api pod is stuck in `ErrImagePull` or `ImagePullBackOff` while attempting to roll out.
+- phase: 'Phase 2: Isolate (Inspect Kubelet Image Pull Events)'
+  prompt: Inspect the pod events on order-api to see the exact image URL and registry error.
+  recommended_cmd: kubectl describe pod -n ${NAMESPACE} -l app=order-api | tail -n 25
+  hint: Use `kubectl describe pod -n ${NAMESPACE} -l app=order-api` to view the Events table at the bottom.
+  explanation: 'Look at the `Failed to pull image` event: Zarf''s mutating webhook rewrote the image to the internal Zarf
+    seed registry (`127.0.0.1:31999/...`), but the tag `3.11-unseeded-airgap` returns `manifest unknown`.'
+- phase: 'Phase 3: Root Cause (Query Internal Zarf Registry Catalog)'
+  prompt: Use the Zarf CLI to list what repositories and tags actually exist inside the in-cluster registry.
+  recommended_cmd: zarf tools registry catalog
+  hint: Run `zarf tools registry catalog` (and `zarf tools registry ls library/python`) to inspect seeded images.
+  explanation: "`zarf tools registry catalog` queries the internal registry directly without needing external tools. Only\
+    \ `python:3.11-alpine` was packaged in the Zarf bundle\u2014`3.11-unseeded-airgap` does not exist."
+- phase: 'Phase 4: Remediate & Verify (Restore Seeded Image Tag)'
+  prompt: Revert order-api in '${NAMESPACE}' back to the valid seeded image `python:3.11-alpine` (or roll back the deployment).
+  recommended_cmd: kubectl set image deployment/order-api order-api=python:3.11-alpine -n ${NAMESPACE}
+  hint: Run `kubectl set image deployment/order-api order-api=python:3.11-alpine -n ${NAMESPACE}` or `kubectl rollout undo
+    deployment/order-api -n ${NAMESPACE}`.
+  explanation: Updating the image tag back to `python:3.11-alpine` allows Zarf's mutating webhook to match the seeded image
+    digest in the local registry.

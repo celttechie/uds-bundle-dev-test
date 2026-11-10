@@ -59,6 +59,7 @@ uds-bundle-dev-test/
 ├── scripts/                        # Build, compliance, and chaos/tutor automation
 │   ├── common.py                   # KUBECONFIG discovery, SSH tunnel auto-recovery & runner
 │   ├── drill_manager.py            # Interactive CLI Tutor & Chaos Injection Engine
+│   ├── drills/                     # Modular YAML scenario catalog & diagnostic cheatsheet
 │   ├── build-bundle.sh             # Builds Zarf packages and creates .tar.zst bundle
 │   ├── test-deploy.sh              # Deploys the compiled UDS bundle to target cluster
 │   ├── test-compliance.sh          # Runs Lula OSCAL IL5 compliance validation

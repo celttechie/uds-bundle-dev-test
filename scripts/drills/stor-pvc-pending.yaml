@@ -1,0 +1,46 @@
+id: stor-pvc-pending
+domain: Storage
+tools:
+- kubectl
+title: Unsatisfied StorageClass / Pending PVC
+description: Creates a PersistentVolumeClaim (`drill-pending-pvc`) in '${NAMESPACE}' requesting a non-existent StorageClass.
+symptoms: PersistentVolumeClaim `drill-pending-pvc` remains stuck in Pending state with ProvisioningFailed events.
+inject_cmds:
+- |-
+  cat << 'EOF' | kubectl apply -f -
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: drill-pending-pvc
+      namespace: ${NAMESPACE}
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: non-existent-nvme-sc
+      resources:
+        requests:
+          storage: 1Gi
+    EOF
+heal_cmds:
+- kubectl delete pvc drill-pending-pvc -n ${NAMESPACE} --ignore-not-found
+verify_cmd: kubectl get pvc -n ${NAMESPACE}
+tutor_steps:
+- phase: 'Phase 1: Detect (Check PVC Status)'
+  prompt: List PersistentVolumeClaims in '${NAMESPACE}'.
+  recommended_cmd: kubectl get pvc -n ${NAMESPACE}
+  hint: Run `kubectl get pvc -n ${NAMESPACE}`.
+  explanation: '`drill-pending-pvc` is stuck in `Pending` requesting `STORAGECLASS: non-existent-nvme-sc`.'
+- phase: 'Phase 2: Isolate (Inspect PVC Events)'
+  prompt: Describe `drill-pending-pvc` to view the volume provisioner failure reason.
+  recommended_cmd: kubectl describe pvc drill-pending-pvc -n ${NAMESPACE}
+  hint: Run `kubectl describe pvc drill-pending-pvc -n ${NAMESPACE}`.
+  explanation: '`storageclass.storage.k8s.io "non-existent-nvme-sc" not found`.'
+- phase: 'Phase 3: Root Cause (List Available Cluster StorageClasses)'
+  prompt: List the actual StorageClasses installed in the cluster.
+  recommended_cmd: kubectl get storageclass
+  hint: Run `kubectl get sc`.
+  explanation: K3s provides `local-path` as the default StorageClass, not `non-existent-nvme-sc`.
+- phase: 'Phase 4: Remediate & Verify (Delete Misconfigured PVC)'
+  prompt: Delete the broken `drill-pending-pvc` claim in '${NAMESPACE}'.
+  recommended_cmd: kubectl delete pvc drill-pending-pvc -n ${NAMESPACE}
+  hint: Run `kubectl delete pvc drill-pending-pvc -n ${NAMESPACE}`.
+  explanation: Removing the invalid PVC clears the storage provisioning alert.

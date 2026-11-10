@@ -1,0 +1,37 @@
+id: comp-oom-killed
+domain: Compute
+tools:
+- kubectl
+title: Out Of Memory CrashLoop (OOMKilled / Exit Code 137)
+description: Injects an unbounded memory allocation loop into `queue-worker` in '${NAMESPACE}'.
+symptoms: 'queue-worker restarts repeatedly in CrashLoopBackOff with Last State: OOMKilled (Exit Code 137).'
+inject_cmds:
+- |-
+  cat << 'EOF' | kubectl patch deployment queue-worker -n ${NAMESPACE} --type='json' --patch-file /dev/stdin
+    [{"op":"replace","path":"/spec/template/spec/containers/0/command","value":["/bin/sh","-c","python3 -c \"import time; b=[]; print('Leaking memory...'); [b.append('X'*1024*1024) or time.sleep(0.05) for _ in range(500)]\""]}]
+    EOF
+heal_cmds:
+- kubectl rollout undo deployment/queue-worker -n ${NAMESPACE}
+verify_cmd: kubectl get pods -n ${NAMESPACE} -l app=queue-worker
+tutor_steps:
+- phase: 'Phase 1: Detect (Identify Crashing Pod)'
+  prompt: List all pods in '${NAMESPACE}' to find the crashing workload.
+  recommended_cmd: kubectl get pods -n ${NAMESPACE}
+  hint: Run `kubectl get pods -n ${NAMESPACE}`.
+  explanation: '`queue-worker` has multiple restarts and is entering `OOMKilled` / `CrashLoopBackOff`.'
+- phase: 'Phase 2: Isolate (Check Container Exit Code & Last Termination State)'
+  prompt: Describe the `queue-worker` pod to inspect `Last State`, `Reason`, and `Exit Code`.
+  recommended_cmd: kubectl describe pod -n ${NAMESPACE} -l app=queue-worker | grep -A 12 'Last State:'
+  hint: Run `kubectl describe pod -n ${NAMESPACE} -l app=queue-worker`.
+  explanation: '`Reason: OOMKilled` and `Exit Code: 137` (SIGKILL = 128 + 9) prove the Linux kernel cgroup OOM killer terminated
+    the container for exceeding its 128Mi memory limit.'
+- phase: 'Phase 3: Root Cause (Inspect Previous Container Logs)'
+  prompt: Fetch logs from the previous crashed container instance of `queue-worker`.
+  recommended_cmd: kubectl logs -n ${NAMESPACE} -l app=queue-worker --previous
+  hint: Run `kubectl logs -n ${NAMESPACE} -l app=queue-worker --previous`.
+  explanation: The logs show `Leaking memory...` right before the kernel killed the process.
+- phase: 'Phase 4: Remediate & Verify (Roll Back Deployment)'
+  prompt: Roll back the `queue-worker` deployment in '${NAMESPACE}' to its previous healthy revision.
+  recommended_cmd: kubectl rollout undo deployment/queue-worker -n ${NAMESPACE}
+  hint: Run `kubectl rollout undo deployment/queue-worker -n ${NAMESPACE}`.
+  explanation: '`kubectl rollout undo` restores the healthy worker loop and stabilizes memory usage.'

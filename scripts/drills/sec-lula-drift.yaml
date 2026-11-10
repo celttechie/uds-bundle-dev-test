@@ -1,0 +1,39 @@
+id: sec-lula-drift
+domain: Lula/Security
+tools:
+- lula
+- kubectl
+title: DoD IL5 NIST 800-53 AC-3 Privilege Escalation Drift
+description: 'Patches `order-api` in ''${NAMESPACE}'' with `securityContext.allowPrivilegeEscalation: true`, causing live
+  cluster drift that fails Lula OSCAL validation against `docs/compliance/oscal-il5.yaml`.'
+symptoms: Pods run normally, but `lula validate -f docs/compliance/oscal-il5.yaml` fails control `ac-3` (UUID c65f7e81-d204-4cc6-93be-1706402f0ff8)
+  with state `not-satisfied`.
+inject_cmds:
+- kubectl patch deployment order-api -n ${NAMESPACE} --type='json' -p='[{"op":"add","path":"/spec/template/spec/containers/0/securityContext","value":{"allowPrivilegeEscalation":true}}]'
+heal_cmds:
+- kubectl patch deployment order-api -n ${NAMESPACE} --type='json' -p='[{"op":"add","path":"/spec/template/spec/containers/0/securityContext","value":{"allowPrivilegeEscalation":false}}]'
+verify_cmd: lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml
+tutor_steps:
+- phase: 'Phase 1: Detect (Run Lula OSCAL Compliance Validation)'
+  prompt: Run `lula validate` against `docs/compliance/oscal-il5.yaml` to audit the live cluster.
+  recommended_cmd: lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml
+  hint: Run `lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml`.
+  explanation: Lula queries the Kubernetes API and evaluates the embedded OPA Rego policies, reporting that control `ac-3`
+    (`c65f7e81-d204-4cc6-93be-1706402f0ff8`) is `not-satisfied`!
+- phase: 'Phase 2: Isolate (Evaluate Assessment Results & Inspect OSCAL Rule)'
+  prompt: Run `lula evaluate` on the generated `docs/compliance/assessment-results.yaml` or inspect the failing Rego rule.
+  recommended_cmd: lula evaluate -f docs/compliance/assessment-results.yaml
+  hint: Run `lula evaluate -f docs/compliance/assessment-results.yaml` or inspect `docs/compliance/oscal-il5.yaml`.
+  explanation: Control `ac-3` requires every container in `${NAMESPACE}` deployments to have `securityContext.allowPrivilegeEscalation
+    == false`.
+- phase: 'Phase 3: Root Cause (Locate the Non-Compliant Deployment via kubectl)'
+  prompt: 'Query deployments in ''${NAMESPACE}'' to see which container has `allowPrivilegeEscalation: true`.'
+  recommended_cmd: 'kubectl get deploy -n ${NAMESPACE} -o jsonpath=''{range .items[*]}{.metadata.name}{": "}{.spec.template.spec.containers[*].securityContext}{"\n"}{end}'''
+  hint: Run `kubectl get deploy -n ${NAMESPACE} -o yaml | grep -B5 -A5 allowPrivilegeEscalation`.
+  explanation: '`order-api` has `{"allowPrivilegeEscalation":true}` in its container securityContext.'
+- phase: 'Phase 4: Remediate & Verify (Patch SecurityContext & Re-run Lula)'
+  prompt: 'Patch `order-api` in ''${NAMESPACE}'' back to `allowPrivilegeEscalation: false` and re-run `lula validate`.'
+  recommended_cmd: kubectl patch deployment order-api -n ${NAMESPACE} --type='json' -p='[{"op":"add","path":"/spec/template/spec/containers/0/securityContext","value":{"allowPrivilegeEscalation":false}}]'
+    && lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml
+  hint: 'Patch `allowPrivilegeEscalation: false` on `order-api` and run `lula validate -f docs/compliance/oscal-il5.yaml`.'
+  explanation: All 5 NIST 800-53 controls now return `satisfied` in Lula!

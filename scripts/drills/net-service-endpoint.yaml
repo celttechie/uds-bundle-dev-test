@@ -1,0 +1,33 @@
+id: net-service-endpoint
+domain: UDS/Networking
+tools:
+- kubectl
+title: Service Selector Label Mismatch (Empty Endpoints)
+description: 'Changes `order-api` Service selector in ''${NAMESPACE}'' to `app: order-api-wrong-label`.'
+symptoms: Service `order-api` has `<none>` in its Endpoints list (`kubectl get ep order-api -n ${NAMESPACE}`).
+inject_cmds:
+- kubectl patch svc order-api -n ${NAMESPACE} --type='json' -p='[{"op":"replace","path":"/spec/selector/app","value":"order-api-wrong-label"}]'
+heal_cmds:
+- kubectl patch svc order-api -n ${NAMESPACE} --type='json' -p='[{"op":"replace","path":"/spec/selector/app","value":"order-api"}]'
+verify_cmd: kubectl get ep order-api -n ${NAMESPACE}
+tutor_steps:
+- phase: 'Phase 1: Detect (Check Service Endpoints)'
+  prompt: Check the Endpoints object for `order-api` in '${NAMESPACE}'.
+  recommended_cmd: kubectl get endpoints order-api -n ${NAMESPACE}
+  hint: Run `kubectl get ep order-api -n ${NAMESPACE}`.
+  explanation: The `ENDPOINTS` column is `<none>`, meaning the Service has zero backing pods.
+- phase: 'Phase 2: Isolate (Inspect Service Selector)'
+  prompt: Describe the `order-api` Service to see what pod labels its `Selector` is looking for.
+  recommended_cmd: kubectl describe svc order-api -n ${NAMESPACE}
+  hint: Run `kubectl describe svc order-api -n ${NAMESPACE}` and check the `Selector:` line.
+  explanation: The Service selector is looking for `app=order-api-wrong-label`.
+- phase: 'Phase 3: Root Cause (Compare Against Actual Pod Labels)'
+  prompt: List the pods in '${NAMESPACE}' with their labels displayed.
+  recommended_cmd: kubectl get pods -n ${NAMESPACE} --show-labels
+  hint: Run `kubectl get pods -n ${NAMESPACE} --show-labels`.
+  explanation: The running pods have label `app=order-api`, not `app=order-api-wrong-label`.
+- phase: 'Phase 4: Remediate & Verify (Fix Service Selector)'
+  prompt: 'Patch the `order-api` Service selector back to `app: order-api`.'
+  recommended_cmd: kubectl patch svc order-api -n ${NAMESPACE} -p '{"spec":{"selector":{"app":"order-api"}}}'
+  hint: Run `kubectl patch svc order-api -n ${NAMESPACE} -p '{"spec":{"selector":{"app":"order-api"}}}'`.
+  explanation: Kubernetes immediately repopulates the `Endpoints` slice with the running pod IPs.

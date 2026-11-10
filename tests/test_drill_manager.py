@@ -62,6 +62,39 @@ class TestDrillManager(unittest.TestCase):
                 for key in ("phase", "prompt", "recommended_cmd", "hint", "explanation"):
                     self.assertIn(key, step)
 
+    def test_yaml_drill_files_and_dataclasses(self) -> None:
+        """Verify each scenario file in scripts/drills/ conforms to typed Scenario dataclass and substitutes namespace."""
+        drills_dir = drill_manager.DRILLS_DIR
+        self.assertTrue(drills_dir.is_dir(), "scripts/drills directory must exist")
+        yaml_files = [f for f in drills_dir.glob("*.yaml") if f.name != "cheatsheet.yaml"]
+        self.assertEqual(len(yaml_files), 10, "Expected 10 scenario YAML files")
+
+        custom_ns = "custom-tenant-ns"
+        for yf in yaml_files:
+            raw_text = yf.read_text(encoding="utf-8")
+            # Raw file should use ${NAMESPACE} rather than a hardcoded namespace
+            self.assertNotIn("training-app", raw_text, f"{yf.name} should not contain hardcoded namespace")
+
+            scenario = drill_manager.load_scenario_file(yf, custom_ns)
+            self.assertIsInstance(scenario, drill_manager.Scenario)
+            self.assertEqual(len(scenario.tutor_steps), 4)
+            # Verify custom namespace substitution took effect
+            self.assertIn(custom_ns, scenario.description)
+
+    def test_cheatsheet_yaml_catalog(self) -> None:
+        """Verify cheatsheet.yaml contains expected diagnostic sections and commands."""
+        cs_file = drill_manager.CHEATSHEET_FILE
+        self.assertTrue(cs_file.is_file(), "cheatsheet.yaml must exist")
+        data = yaml.safe_load(cs_file.read_text(encoding="utf-8"))
+        self.assertIsInstance(data, list)
+        self.assertGreaterEqual(len(data), 4)
+        for section in data:
+            self.assertIn("title", section)
+            self.assertIn("commands", section)
+            for cmd_entry in section["commands"]:
+                self.assertIn("cmd", cmd_entry)
+                self.assertIn("desc", cmd_entry)
+
     def test_list_and_cheatsheet_output(self) -> None:
         """Verify --list and --cheatsheet render cleanly without errors."""
         buf = io.StringIO()

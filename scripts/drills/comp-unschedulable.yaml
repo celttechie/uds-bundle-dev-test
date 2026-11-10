@@ -1,0 +1,34 @@
+id: comp-unschedulable
+domain: Compute
+tools:
+- kubectl
+title: Unschedulable Pod / NodeSelector Mismatch
+description: 'Applies a non-existent `nodeSelector` (`topology.kubernetes.io/zone: non-existent-zone-c`) to `order-api` in
+  ''${NAMESPACE}''.'
+symptoms: New order-api pods remain stuck in Pending state with a FailedScheduling event.
+inject_cmds:
+- kubectl patch deployment order-api -n ${NAMESPACE} --type='json' -p='[{"op":"add","path":"/spec/template/spec/nodeSelector","value":{"topology.kubernetes.io/zone":"non-existent-zone-c"}}]'
+heal_cmds:
+- kubectl patch deployment order-api -n ${NAMESPACE} --type='json' -p='[{"op":"remove","path":"/spec/template/spec/nodeSelector"}]'
+verify_cmd: kubectl get pods -n ${NAMESPACE} -l app=order-api
+tutor_steps:
+- phase: 'Phase 1: Detect (Spot Pending Pods)'
+  prompt: Check pod statuses in '${NAMESPACE}'.
+  recommended_cmd: kubectl get pods -n ${NAMESPACE} -o wide
+  hint: Run `kubectl get pods -n ${NAMESPACE} -o wide`.
+  explanation: New `order-api` replica is stuck in `Pending` with `<none>` assigned for `NODE`.
+- phase: 'Phase 2: Isolate (Check Scheduler Failure Event)'
+  prompt: Describe the pending `order-api` pod to see why `default-scheduler` rejected it.
+  recommended_cmd: kubectl describe pod -n ${NAMESPACE} -l app=order-api | tail -n 15
+  hint: Run `kubectl describe pod -n ${NAMESPACE} -l app=order-api`.
+  explanation: '`Warning FailedScheduling: 0/1 nodes are available: 1 node(s) didn''t match Pod''s node affinity/selector`.'
+- phase: 'Phase 3: Root Cause (Compare Node Labels vs Pod NodeSelector)'
+  prompt: Check the labels on your cluster nodes and compare with the deployment's `nodeSelector`.
+  recommended_cmd: kubectl get nodes --show-labels
+  hint: Run `kubectl get nodes --show-labels`.
+  explanation: The deployment requires `topology.kubernetes.io/zone=non-existent-zone-c`, which no node has.
+- phase: 'Phase 4: Remediate & Verify (Remove Invalid NodeSelector)'
+  prompt: Remove the invalid `nodeSelector` from `order-api` in '${NAMESPACE}'.
+  recommended_cmd: kubectl patch deployment order-api -n ${NAMESPACE} --type='json' -p='[{"op":"remove","path":"/spec/template/spec/nodeSelector"}]'
+  hint: Run `kubectl patch deployment order-api -n ${NAMESPACE} --type='json' -p='[{"op":"remove","path":"/spec/template/spec/nodeSelector"}]'`.
+  explanation: The scheduler immediately binds the pod to the node.
