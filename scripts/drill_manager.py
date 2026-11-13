@@ -5,10 +5,14 @@ Injects, verifies, teaches, and heals cluster, Zarf, UDS, and Lula compliance fa
 """
 
 import argparse
+from dataclasses import asdict, dataclass
 import json
+from pathlib import Path
 import random
 import sys
 from typing import Any
+
+import yaml
 
 from common import (
     BLUE,
@@ -25,589 +29,107 @@ from common import (
     run_cmd,
 )
 
+DRILLS_DIR = REPO_ROOT / "scripts" / "drills"
+CHEATSHEET_FILE = DRILLS_DIR / "cheatsheet.yaml"
 MYSTERY_STATE_FILE = REPO_ROOT / ".active_mystery_drill.json"
+
+DOMAIN_ORDER = [
+    "Zarf/Air-Gap",
+    "UDS/Networking",
+    "Compute",
+    "Storage",
+    "Lula/Security",
+]
+
+
+@dataclass
+class TutorStep:
+    phase: str
+    prompt: str
+    recommended_cmd: str
+    hint: str
+    explanation: str
+
+
+@dataclass
+class Scenario:
+    id: str
+    domain: str
+    tools: list[str]
+    title: str
+    description: str
+    symptoms: str
+    inject_cmds: list[str]
+    heal_cmds: list[str]
+    verify_cmd: str
+    tutor_steps: list[TutorStep]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], sc_id: str) -> "Scenario":
+        tutor_steps = [
+            TutorStep(
+                phase=step["phase"],
+                prompt=step["prompt"],
+                recommended_cmd=step["recommended_cmd"],
+                hint=step["hint"],
+                explanation=step["explanation"],
+            )
+            for step in data.get("tutor_steps", [])
+        ]
+        return cls(
+            id=data.get("id") or sc_id,
+            domain=data["domain"],
+            tools=data["tools"],
+            title=data["title"],
+            description=data["description"],
+            symptoms=data["symptoms"],
+            inject_cmds=data["inject_cmds"],
+            heal_cmds=data["heal_cmds"],
+            verify_cmd=data["verify_cmd"],
+            tutor_steps=tutor_steps,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def load_scenario_file(path: Path, ns: str) -> Scenario:
+    """Load a single scenario YAML definition and substitute namespace parameters."""
+    raw = path.read_text(encoding="utf-8")
+    rendered = raw.replace("${NAMESPACE}", ns).replace("${ns}", ns)
+    data = yaml.safe_load(rendered)
+    sc_id = data.get("id") or path.stem
+    return Scenario.from_dict(data, sc_id)
 
 
 def build_scenarios(ns: str) -> dict[str, dict[str, Any]]:
-    """Build the scenario catalog parameterized by the active training namespace."""
-    return {
-        # ======================================================================
-        # DOMAIN 1: ZARF & AIR-GAP REGISTRY
-        # ======================================================================
-        "zarf-untracked-image": {
-            "domain": "Zarf/Air-Gap",
-            "tools": ["kubectl", "zarf"],
-            "title": "Unseeded Container Image Tag in Air-Gap (ImagePullBackOff)",
-            "description": (
-                f"Patches order-api in '{ns}' to request an image tag ('python:3.11-unseeded-airgap') "
-                "that was never packaged into the internal Zarf registry."
-            ),
-            "inject_cmds": [
-                f"kubectl set image deployment/order-api order-api=python:3.11-unseeded-airgap -n {ns}"
-            ],
-            "heal_cmds": [
-                f"kubectl set image deployment/order-api order-api=python:3.11-alpine -n {ns}"
-            ],
-            "verify_cmd": f"kubectl get pods -n {ns} -l app=order-api",
-            "symptoms": (
-                "New order-api replica is stuck in ErrImagePull / ImagePullBackOff because the internal "
-                "Zarf registry (127.0.0.1:31999) does not have the requested tag and WAN egress is blocked."
-            ),
-            "tutor_steps": [
-                {
-                    "phase": "Phase 1: Detect (Spot the Failing Pod)",
-                    "prompt": f"Check pod statuses in the '{ns}' namespace to see which workload is failing.",
-                    "recommended_cmd": f"kubectl get pods -n {ns} -o wide",
-                    "hint": f"Run `kubectl get pods -n {ns} -o wide` and look for ErrImagePull or ImagePullBackOff.",
-                    "explanation": (
-                        "Notice that an order-api pod is stuck in `ErrImagePull` or `ImagePullBackOff` while "
-                        "attempting to roll out."
-                    ),
-                },
-                {
-                    "phase": "Phase 2: Isolate (Inspect Kubelet Image Pull Events)",
-                    "prompt": "Inspect the pod events on order-api to see the exact image URL and registry error.",
-                    "recommended_cmd": f"kubectl describe pod -n {ns} -l app=order-api | tail -n 25",
-                    "hint": f"Use `kubectl describe pod -n {ns} -l app=order-api` to view the Events table at the bottom.",
-                    "explanation": (
-                        "Look at the `Failed to pull image` event: Zarf's mutating webhook rewrote the image to "
-                        "the internal Zarf seed registry (`127.0.0.1:31999/...`), but the tag `3.11-unseeded-airgap` "
-                        "returns `manifest unknown`."
-                    ),
-                },
-                {
-                    "phase": "Phase 3: Root Cause (Query Internal Zarf Registry Catalog)",
-                    "prompt": "Use the Zarf CLI to list what repositories and tags actually exist inside the in-cluster registry.",
-                    "recommended_cmd": "zarf tools registry catalog",
-                    "hint": "Run `zarf tools registry catalog` (and `zarf tools registry ls library/python`) to inspect seeded images.",
-                    "explanation": (
-                        "`zarf tools registry catalog` queries the internal registry directly without needing external tools. "
-                        "Only `python:3.11-alpine` was packaged in the Zarf bundle—`3.11-unseeded-airgap` does not exist."
-                    ),
-                },
-                {
-                    "phase": "Phase 4: Remediate & Verify (Restore Seeded Image Tag)",
-                    "prompt": f"Revert order-api in '{ns}' back to the valid seeded image `python:3.11-alpine` (or roll back the deployment).",
-                    "recommended_cmd": f"kubectl set image deployment/order-api order-api=python:3.11-alpine -n {ns}",
-                    "hint": f"Run `kubectl set image deployment/order-api order-api=python:3.11-alpine -n {ns}` or `kubectl rollout undo deployment/order-api -n {ns}`.",
-                    "explanation": (
-                        "Updating the image tag back to `python:3.11-alpine` allows Zarf's mutating webhook to match "
-                        "the seeded image digest in the local registry."
-                    ),
-                },
-            ],
-        },
-        "zarf-webhook-bypass": {
-            "domain": "Zarf/Air-Gap",
-            "tools": ["kubectl", "zarf"],
-            "title": "Zarf Mutating Webhook Bypassed (zarf.dev/agent=ignore)",
-            "description": (
-                f"Adds the label `zarf.dev/agent: ignore` to queue-worker pod template in '{ns}' "
-                "and sets `imagePullPolicy: Always`, causing kubelet to bypass the internal Zarf registry "
-                "and attempt an upstream internet pull across the air-gap."
-            ),
-            "inject_cmds": [
-                f"""kubectl patch deployment queue-worker -n {ns} --type='json' -p='[
-                    {{"op":"add","path":"/spec/template/metadata/labels/zarf.dev~1agent","value":"ignore"}},
-                    {{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"Always"}}
-                ]'"""
-            ],
-            "heal_cmds": [
-                f"""kubectl patch deployment queue-worker -n {ns} --type='json' -p='[
-                    {{"op":"remove","path":"/spec/template/metadata/labels/zarf.dev~1agent"}},
-                    {{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"IfNotPresent"}}
-                ]' 2>/dev/null || kubectl rollout undo deployment/queue-worker -n {ns}"""
-            ],
-            "verify_cmd": f"kubectl get pods -n {ns} -l app=queue-worker",
-            "symptoms": (
-                "queue-worker fails with ImagePullBackOff trying to reach registry-1.docker.io instead of "
-                "127.0.0.1:31999 because the Zarf agent webhook ignored the pod."
-            ),
-            "tutor_steps": [
-                {
-                    "phase": "Phase 1: Detect (Check Pod & Zarf Agent Logs)",
-                    "prompt": f"Check the pod status in '{ns}' and inspect recent events.",
-                    "recommended_cmd": f"kubectl get pods -n {ns} -l app=queue-worker",
-                    "hint": f"Run `kubectl get pods -n {ns} -l app=queue-worker`.",
-                    "explanation": "The newly created `queue-worker` pod is stuck in `ErrImagePull` / `ImagePullBackOff`.",
-                },
-                {
-                    "phase": "Phase 2: Isolate (Compare Image URL & Zarf Webhook Logs)",
-                    "prompt": "Check the Zarf agent mutating webhook logs in the `zarf` namespace or describe the failing pod.",
-                    "recommended_cmd": f"kubectl describe pod -n {ns} -l app=queue-worker | grep -E 'Image:|Failed|zarf'",
-                    "hint": f"Run `kubectl describe pod -n {ns} -l app=queue-worker` and check `kubectl logs -n zarf -l app=agent-hook --tail=20`.",
-                    "explanation": (
-                        "Notice the pod is attempting to pull `docker.io/library/python:3.11-alpine` directly from the internet "
-                        "rather than `127.0.0.1:31999/...`!"
-                    ),
-                },
-                {
-                    "phase": "Phase 3: Root Cause (Inspect Pod Template Labels)",
-                    "prompt": f"Inspect the labels on the `queue-worker` deployment template in '{ns}'.",
-                    "recommended_cmd": f"kubectl get deployment queue-worker -n {ns} -o jsonpath='{{.spec.template.metadata.labels}}'",
-                    "hint": f"Run `kubectl get deployment queue-worker -n {ns} -o jsonpath='{{.spec.template.metadata.labels}}'`.",
-                    "explanation": (
-                        "The pod template has `\"zarf.dev/agent\":\"ignore\"`, which explicitly instructs Zarf's mutating "
-                        "admission webhook not to rewrite image references or inject registry pull secrets."
-                    ),
-                },
-                {
-                    "phase": "Phase 4: Remediate & Verify (Re-enable Zarf Agent Mutation)",
-                    "prompt": "Roll back or patch the `queue-worker` deployment to remove `zarf.dev/agent: ignore`.",
-                    "recommended_cmd": f"kubectl rollout undo deployment/queue-worker -n {ns}",
-                    "hint": f"Run `kubectl rollout undo deployment/queue-worker -n {ns}`.",
-                    "explanation": (
-                        "Removing the `zarf.dev/agent: ignore` label allows Zarf's webhook to mutate the pod spec back "
-                        "to the in-cluster registry."
-                    ),
-                },
-            ],
-        },
-        # ======================================================================
-        # DOMAIN 2: UDS BUNDLE & KUBERNETES NETWORKING
-        # ======================================================================
-        "net-policy-block": {
-            "domain": "UDS/Networking",
-            "tools": ["kubectl", "uds"],
-            "title": "Zero-Trust NetworkPolicy Ingress Block",
-            "description": (
-                f"Applies an overriding NetworkPolicy ('deny-order-api-ingress') in '{ns}' that selects "
-                "`app: order-api` and blocks all ingress traffic from `frontend`."
-            ),
-            "inject_cmds": [
-                f"""cat << 'EOF' | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: deny-order-api-ingress
-  namespace: {ns}
-spec:
-  podSelector:
-    matchLabels:
-      app: order-api
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: nonexistent-service
-EOF"""
-            ],
-            "heal_cmds": [
-                f"kubectl delete networkpolicy deny-order-api-ingress -n {ns} --ignore-not-found"
-            ],
-            "verify_cmd": f"kubectl get networkpolicy -n {ns}",
-            "symptoms": (
-                "All pods show 1/1 Running, but requests from frontend to order-api:8080 time out "
-                "due to a restrictive NetworkPolicy."
-            ),
-            "tutor_steps": [
-                {
-                    "phase": "Phase 1: Detect (Pods Running, Traffic Timing Out)",
-                    "prompt": f"Verify that pods and services in '{ns}' appear healthy despite the connectivity failure.",
-                    "recommended_cmd": f"kubectl get pods,svc -n {ns}",
-                    "hint": f"Run `kubectl get pods,svc -n {ns}`.",
-                    "explanation": "Both `frontend` and `order-api` pods are `Running` and Services have valid ClusterIPs.",
-                },
-                {
-                    "phase": "Phase 2: Isolate (List Active NetworkPolicies)",
-                    "prompt": f"List the Kubernetes NetworkPolicies active in the '{ns}' namespace.",
-                    "recommended_cmd": f"kubectl get networkpolicy -n {ns}",
-                    "hint": f"Run `kubectl get netpol -n {ns}`.",
-                    "explanation": (
-                        "Alongside `allow-training-internal`, there is a suspicious policy named `deny-order-api-ingress` "
-                        "targeting `app=order-api`."
-                    ),
-                },
-                {
-                    "phase": "Phase 3: Root Cause (Inspect NetworkPolicy Rules)",
-                    "prompt": "Describe `deny-order-api-ingress` to see which pods are allowed to connect to `order-api`.",
-                    "recommended_cmd": f"kubectl describe networkpolicy deny-order-api-ingress -n {ns}",
-                    "hint": f"Run `kubectl describe netpol deny-order-api-ingress -n {ns}`.",
-                    "explanation": (
-                        "The policy restricts ingress on `app=order-api` exclusivamente to `app=nonexistent-service`, "
-                        "dropping packets from `frontend`."
-                    ),
-                },
-                {
-                    "phase": "Phase 4: Remediate & Verify (Remove Rogue NetworkPolicy)",
-                    "prompt": f"Delete the rogue `deny-order-api-ingress` NetworkPolicy in '{ns}'.",
-                    "recommended_cmd": f"kubectl delete networkpolicy deny-order-api-ingress -n {ns}",
-                    "hint": f"Run `kubectl delete netpol deny-order-api-ingress -n {ns}`.",
-                    "explanation": "Deleting the rogue policy restores inter-service communication under `allow-training-internal`.",
-                },
-            ],
-        },
-        "net-port-mismatch": {
-            "domain": "UDS/Networking",
-            "tools": ["kubectl"],
-            "title": "Service TargetPort Misconfiguration (Connection Refused)",
-            "description": f"Changes `order-api` Service targetPort in '{ns}' from 8080 to 9090.",
-            "inject_cmds": [
-                f"""kubectl patch svc order-api -n {ns} --type='json' -p='[{{"op":"replace","path":"/spec/ports/0/targetPort","value":9090}}]'"""
-            ],
-            "heal_cmds": [
-                f"""kubectl patch svc order-api -n {ns} --type='json' -p='[{{"op":"replace","path":"/spec/ports/0/targetPort","value":8080}}]'"""
-            ],
-            "verify_cmd": f"kubectl get svc,ep order-api -n {ns}",
-            "symptoms": (
-                "order-api pods are 1/1 Running and DNS resolves, but connections to order-api:8080 "
-                "immediately fail with 'Connection refused'."
-            ),
-            "tutor_steps": [
-                {
-                    "phase": "Phase 1: Detect (Inspect Service & Endpoints)",
-                    "prompt": f"Check the `order-api` Service and Endpoints in '{ns}'.",
-                    "recommended_cmd": f"kubectl get svc,ep order-api -n {ns}",
-                    "hint": f"Run `kubectl get svc,ep order-api -n {ns}`.",
-                    "explanation": (
-                        "Look closely at the `ENDPOINTS` column: the pod IPs are listed with port `:9090` instead of `:8080`!"
-                    ),
-                },
-                {
-                    "phase": "Phase 2: Isolate (Compare Service TargetPort vs ContainerPort)",
-                    "prompt": "Describe the `order-api` Service and check the container port on the `order-api` Deployment.",
-                    "recommended_cmd": f"kubectl describe svc order-api -n {ns}",
-                    "hint": f"Run `kubectl describe svc order-api -n {ns}`.",
-                    "explanation": (
-                        "`Port` is `8080/TCP`, but `TargetPort` was changed to `9090/TCP`, while the Python HTTP server "
-                        "inside the container listens on port `8080`."
-                    ),
-                },
-                {
-                    "phase": "Phase 3: Root Cause (Verify Container Listening Port)",
-                    "prompt": "Check the containerPort configured on the `order-api` deployment.",
-                    "recommended_cmd": f"kubectl get deploy order-api -n {ns} -o jsonpath='{{.spec.template.spec.containers[0].ports}}'",
-                    "hint": f"Run `kubectl get deploy order-api -n {ns} -o jsonpath='{{.spec.template.spec.containers[0].ports}}'`.",
-                    "explanation": "The container exposes `containerPort: 8080`, confirming the Service `targetPort: 9090` is wrong.",
-                },
-                {
-                    "phase": "Phase 4: Remediate & Verify (Patch Service TargetPort to 8080)",
-                    "prompt": f"Patch the `order-api` Service in '{ns}' so `targetPort` is `8080`.",
-                    "recommended_cmd": f"kubectl patch svc order-api -n {ns} --type='json' -p='[{{\"op\":\"replace\",\"path\":\"/spec/ports/0/targetPort\",\"value\":8080}}]'",
-                    "hint": f"Run `kubectl patch svc order-api -n {ns} -p '{{\"spec\":{{\"ports\":[{{\"port\":8080,\"targetPort\":8080}}]}}}}'`.",
-                    "explanation": "Endpoints immediately update to `:8080` and traffic flows normally.",
-                },
-            ],
-        },
-        "net-service-endpoint": {
-            "domain": "UDS/Networking",
-            "tools": ["kubectl"],
-            "title": "Service Selector Label Mismatch (Empty Endpoints)",
-            "description": f"Changes `order-api` Service selector in '{ns}' to `app: order-api-wrong-label`.",
-            "inject_cmds": [
-                f"""kubectl patch svc order-api -n {ns} --type='json' -p='[{{"op":"replace","path":"/spec/selector/app","value":"order-api-wrong-label"}}]'"""
-            ],
-            "heal_cmds": [
-                f"""kubectl patch svc order-api -n {ns} --type='json' -p='[{{"op":"replace","path":"/spec/selector/app","value":"order-api"}}]'"""
-            ],
-            "verify_cmd": f"kubectl get ep order-api -n {ns}",
-            "symptoms": f"Service `order-api` has `<none>` in its Endpoints list (`kubectl get ep order-api -n {ns}`).",
-            "tutor_steps": [
-                {
-                    "phase": "Phase 1: Detect (Check Service Endpoints)",
-                    "prompt": f"Check the Endpoints object for `order-api` in '{ns}'.",
-                    "recommended_cmd": f"kubectl get endpoints order-api -n {ns}",
-                    "hint": f"Run `kubectl get ep order-api -n {ns}`.",
-                    "explanation": "The `ENDPOINTS` column is `<none>`, meaning the Service has zero backing pods.",
-                },
-                {
-                    "phase": "Phase 2: Isolate (Inspect Service Selector)",
-                    "prompt": "Describe the `order-api` Service to see what pod labels its `Selector` is looking for.",
-                    "recommended_cmd": f"kubectl describe svc order-api -n {ns}",
-                    "hint": f"Run `kubectl describe svc order-api -n {ns}` and check the `Selector:` line.",
-                    "explanation": "The Service selector is looking for `app=order-api-wrong-label`.",
-                },
-                {
-                    "phase": "Phase 3: Root Cause (Compare Against Actual Pod Labels)",
-                    "prompt": f"List the pods in '{ns}' with their labels displayed.",
-                    "recommended_cmd": f"kubectl get pods -n {ns} --show-labels",
-                    "hint": f"Run `kubectl get pods -n {ns} --show-labels`.",
-                    "explanation": "The running pods have label `app=order-api`, not `app=order-api-wrong-label`.",
-                },
-                {
-                    "phase": "Phase 4: Remediate & Verify (Fix Service Selector)",
-                    "prompt": "Patch the `order-api` Service selector back to `app: order-api`.",
-                    "recommended_cmd": f"kubectl patch svc order-api -n {ns} -p '{{\"spec\":{{\"selector\":{{\"app\":\"order-api\"}}}}}}'",
-                    "hint": f"Run `kubectl patch svc order-api -n {ns} -p '{{\"spec\":{{\"selector\":{{\"app\":\"order-api\"}}}}}}'`.",
-                    "explanation": "Kubernetes immediately repopulates the `Endpoints` slice with the running pod IPs.",
-                },
-            ],
-        },
-        # ======================================================================
-        # DOMAIN 3: KUBERNETES COMPUTE & STORAGE
-        # ======================================================================
-        "comp-oom-killed": {
-            "domain": "Compute",
-            "tools": ["kubectl"],
-            "title": "Out Of Memory CrashLoop (OOMKilled / Exit Code 137)",
-            "description": f"Injects an unbounded memory allocation loop into `queue-worker` in '{ns}'.",
-            "inject_cmds": [
-                f"""cat << 'EOF' | kubectl patch deployment queue-worker -n {ns} --type='json' --patch-file /dev/stdin
-[{{"op":"replace","path":"/spec/template/spec/containers/0/command","value":["/bin/sh","-c","python3 -c \\"import time; b=[]; print('Leaking memory...'); [b.append('X'*1024*1024) or time.sleep(0.05) for _ in range(500)]\\""]}}]
-EOF"""
-            ],
-            "heal_cmds": [
-                f"kubectl rollout undo deployment/queue-worker -n {ns}"
-            ],
-            "verify_cmd": f"kubectl get pods -n {ns} -l app=queue-worker",
-            "symptoms": "queue-worker restarts repeatedly in CrashLoopBackOff with Last State: OOMKilled (Exit Code 137).",
-            "tutor_steps": [
-                {
-                    "phase": "Phase 1: Detect (Identify Crashing Pod)",
-                    "prompt": f"List all pods in '{ns}' to find the crashing workload.",
-                    "recommended_cmd": f"kubectl get pods -n {ns}",
-                    "hint": f"Run `kubectl get pods -n {ns}`.",
-                    "explanation": "`queue-worker` has multiple restarts and is entering `OOMKilled` / `CrashLoopBackOff`.",
-                },
-                {
-                    "phase": "Phase 2: Isolate (Check Container Exit Code & Last Termination State)",
-                    "prompt": "Describe the `queue-worker` pod to inspect `Last State`, `Reason`, and `Exit Code`.",
-                    "recommended_cmd": f"kubectl describe pod -n {ns} -l app=queue-worker | grep -A 12 'Last State:'",
-                    "hint": f"Run `kubectl describe pod -n {ns} -l app=queue-worker`.",
-                    "explanation": (
-                        "`Reason: OOMKilled` and `Exit Code: 137` (SIGKILL = 128 + 9) prove the Linux kernel cgroup OOM killer "
-                        "terminated the container for exceeding its 128Mi memory limit."
-                    ),
-                },
-                {
-                    "phase": "Phase 3: Root Cause (Inspect Previous Container Logs)",
-                    "prompt": "Fetch logs from the previous crashed container instance of `queue-worker`.",
-                    "recommended_cmd": f"kubectl logs -n {ns} -l app=queue-worker --previous",
-                    "hint": f"Run `kubectl logs -n {ns} -l app=queue-worker --previous`.",
-                    "explanation": "The logs show `Leaking memory...` right before the kernel killed the process.",
-                },
-                {
-                    "phase": "Phase 4: Remediate & Verify (Roll Back Deployment)",
-                    "prompt": f"Roll back the `queue-worker` deployment in '{ns}' to its previous healthy revision.",
-                    "recommended_cmd": f"kubectl rollout undo deployment/queue-worker -n {ns}",
-                    "hint": f"Run `kubectl rollout undo deployment/queue-worker -n {ns}`.",
-                    "explanation": "`kubectl rollout undo` restores the healthy worker loop and stabilizes memory usage.",
-                },
-            ],
-        },
-        "comp-probe-fail": {
-            "domain": "Compute",
-            "tools": ["kubectl"],
-            "title": "Liveness Probe HTTP 404 Failure Loop",
-            "description": f"Configures an invalid livenessProbe path (`/healthz-broken-path`) on `order-api` in '{ns}'.",
-            "inject_cmds": [
-                f"""kubectl patch deployment order-api -n {ns} --type='json' -p='[{{"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/httpGet/path","value":"/healthz-broken-path"}}]'"""
-            ],
-            "heal_cmds": [
-                f"""kubectl patch deployment order-api -n {ns} --type='json' -p='[{{"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/httpGet/path","value":"/healthz"}}]'"""
-            ],
-            "verify_cmd": f"kubectl get events -n {ns} --sort-by=.metadata.creationTimestamp | tail -n 10",
-            "symptoms": "order-api containers are repeatedly killed and restarted by kubelet due to HTTP 404 liveness probe failures.",
-            "tutor_steps": [
-                {
-                    "phase": "Phase 1: Detect (Observe Pod Restarts)",
-                    "prompt": f"Check pod statuses and restart counts in '{ns}'.",
-                    "recommended_cmd": f"kubectl get pods -n {ns} -l app=order-api",
-                    "hint": f"Run `kubectl get pods -n {ns} -l app=order-api`.",
-                    "explanation": "`order-api` pods are restarting every ~30 seconds.",
-                },
-                {
-                    "phase": "Phase 2: Isolate (Inspect Namespace Events)",
-                    "prompt": f"Check recent Kubernetes events in '{ns}' sorted by creation timestamp.",
-                    "recommended_cmd": f"kubectl get events -n {ns} --sort-by=.metadata.creationTimestamp | tail -n 15",
-                    "hint": f"Run `kubectl get events -n {ns} --sort-by=.metadata.creationTimestamp`.",
-                    "explanation": (
-                        "Events show `Warning Unhealthy: Liveness probe failed: HTTP probe failed with statuscode: 404`."
-                    ),
-                },
-                {
-                    "phase": "Phase 3: Root Cause (Compare Liveness vs Readiness Probe Paths)",
-                    "prompt": "Inspect the `livenessProbe` and `readinessProbe` definitions on `order-api`.",
-                    "recommended_cmd": f"kubectl describe deploy order-api -n {ns} | grep -E 'Liveness:|Readiness:'",
-                    "hint": f"Run `kubectl describe deploy order-api -n {ns}`.",
-                    "explanation": (
-                        "Readiness checks `/healthz` (200 OK), while Liveness was misconfigured to `/healthz-broken-path` (404)."
-                    ),
-                },
-                {
-                    "phase": "Phase 4: Remediate & Verify (Fix Liveness Probe Path)",
-                    "prompt": "Patch the `order-api` livenessProbe path back to `/healthz`.",
-                    "recommended_cmd": f"kubectl patch deployment order-api -n {ns} --type='json' -p='[{{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/livenessProbe/httpGet/path\",\"value\":\"/healthz\"}}]'",
-                    "hint": f"Run `kubectl rollout undo deployment/order-api -n {ns}` or patch `/healthz`.",
-                    "explanation": "Liveness probes now return HTTP 200 and pod restarts cease.",
-                },
-            ],
-        },
-        "comp-unschedulable": {
-            "domain": "Compute",
-            "tools": ["kubectl"],
-            "title": "Unschedulable Pod / NodeSelector Mismatch",
-            "description": f"Applies a non-existent `nodeSelector` (`topology.kubernetes.io/zone: non-existent-zone-c`) to `order-api` in '{ns}'.",
-            "inject_cmds": [
-                f"""kubectl patch deployment order-api -n {ns} --type='json' -p='[{{"op":"add","path":"/spec/template/spec/nodeSelector","value":{{"topology.kubernetes.io/zone":"non-existent-zone-c"}}}}]'"""
-            ],
-            "heal_cmds": [
-                f"""kubectl patch deployment order-api -n {ns} --type='json' -p='[{{"op":"remove","path":"/spec/template/spec/nodeSelector"}}]'"""
-            ],
-            "verify_cmd": f"kubectl get pods -n {ns} -l app=order-api",
-            "symptoms": "New order-api pods remain stuck in Pending state with a FailedScheduling event.",
-            "tutor_steps": [
-                {
-                    "phase": "Phase 1: Detect (Spot Pending Pods)",
-                    "prompt": f"Check pod statuses in '{ns}'.",
-                    "recommended_cmd": f"kubectl get pods -n {ns} -o wide",
-                    "hint": f"Run `kubectl get pods -n {ns} -o wide`.",
-                    "explanation": "New `order-api` replica is stuck in `Pending` with `<none>` assigned for `NODE`.",
-                },
-                {
-                    "phase": "Phase 2: Isolate (Check Scheduler Failure Event)",
-                    "prompt": "Describe the pending `order-api` pod to see why `default-scheduler` rejected it.",
-                    "recommended_cmd": f"kubectl describe pod -n {ns} -l app=order-api | tail -n 15",
-                    "hint": f"Run `kubectl describe pod -n {ns} -l app=order-api`.",
-                    "explanation": (
-                        "`Warning FailedScheduling: 0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector`."
-                    ),
-                },
-                {
-                    "phase": "Phase 3: Root Cause (Compare Node Labels vs Pod NodeSelector)",
-                    "prompt": "Check the labels on your cluster nodes and compare with the deployment's `nodeSelector`.",
-                    "recommended_cmd": "kubectl get nodes --show-labels",
-                    "hint": "Run `kubectl get nodes --show-labels`.",
-                    "explanation": (
-                        "The deployment requires `topology.kubernetes.io/zone=non-existent-zone-c`, which no node has."
-                    ),
-                },
-                {
-                    "phase": "Phase 4: Remediate & Verify (Remove Invalid NodeSelector)",
-                    "prompt": f"Remove the invalid `nodeSelector` from `order-api` in '{ns}'.",
-                    "recommended_cmd": f"kubectl patch deployment order-api -n {ns} --type='json' -p='[{{\"op\":\"remove\",\"path\":\"/spec/template/spec/nodeSelector\"}}]'",
-                    "hint": f"Run `kubectl patch deployment order-api -n {ns} --type='json' -p='[{{\"op\":\"remove\",\"path\":\"/spec/template/spec/nodeSelector\"}}]'`.",
-                    "explanation": "The scheduler immediately binds the pod to the node.",
-                },
-            ],
-        },
-        "stor-pvc-pending": {
-            "domain": "Storage",
-            "tools": ["kubectl"],
-            "title": "Unsatisfied StorageClass / Pending PVC",
-            "description": f"Creates a PersistentVolumeClaim (`drill-pending-pvc`) in '{ns}' requesting a non-existent StorageClass.",
-            "inject_cmds": [
-                f"""cat << 'EOF' | kubectl apply -f -
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: drill-pending-pvc
-  namespace: {ns}
-spec:
-  accessModes: [ "ReadWriteOnce" ]
-  storageClassName: non-existent-nvme-sc
-  resources:
-    requests:
-      storage: 1Gi
-EOF"""
-            ],
-            "heal_cmds": [
-                f"kubectl delete pvc drill-pending-pvc -n {ns} --ignore-not-found"
-            ],
-            "verify_cmd": f"kubectl get pvc -n {ns}",
-            "symptoms": "PersistentVolumeClaim `drill-pending-pvc` remains stuck in Pending state with ProvisioningFailed events.",
-            "tutor_steps": [
-                {
-                    "phase": "Phase 1: Detect (Check PVC Status)",
-                    "prompt": f"List PersistentVolumeClaims in '{ns}'.",
-                    "recommended_cmd": f"kubectl get pvc -n {ns}",
-                    "hint": f"Run `kubectl get pvc -n {ns}`.",
-                    "explanation": "`drill-pending-pvc` is stuck in `Pending` requesting `STORAGECLASS: non-existent-nvme-sc`.",
-                },
-                {
-                    "phase": "Phase 2: Isolate (Inspect PVC Events)",
-                    "prompt": "Describe `drill-pending-pvc` to view the volume provisioner failure reason.",
-                    "recommended_cmd": f"kubectl describe pvc drill-pending-pvc -n {ns}",
-                    "hint": f"Run `kubectl describe pvc drill-pending-pvc -n {ns}`.",
-                    "explanation": "`storageclass.storage.k8s.io \"non-existent-nvme-sc\" not found`.",
-                },
-                {
-                    "phase": "Phase 3: Root Cause (List Available Cluster StorageClasses)",
-                    "prompt": "List the actual StorageClasses installed in the cluster.",
-                    "recommended_cmd": "kubectl get storageclass",
-                    "hint": "Run `kubectl get sc`.",
-                    "explanation": "K3s provides `local-path` as the default StorageClass, not `non-existent-nvme-sc`.",
-                },
-                {
-                    "phase": "Phase 4: Remediate & Verify (Delete Misconfigured PVC)",
-                    "prompt": f"Delete the broken `drill-pending-pvc` claim in '{ns}'.",
-                    "recommended_cmd": f"kubectl delete pvc drill-pending-pvc -n {ns}",
-                    "hint": f"Run `kubectl delete pvc drill-pending-pvc -n {ns}`.",
-                    "explanation": "Removing the invalid PVC clears the storage provisioning alert.",
-                },
-            ],
-        },
-        # ======================================================================
-        # DOMAIN 4: LULA COMPLIANCE & SECURITY DRIFT
-        # ======================================================================
-        "sec-lula-drift": {
-            "domain": "Lula/Security",
-            "tools": ["lula", "kubectl"],
-            "title": "DoD IL5 NIST 800-53 AC-3 Privilege Escalation Drift",
-            "description": (
-                f"Patches `order-api` in '{ns}' with `securityContext.allowPrivilegeEscalation: true`, "
-                "causing live cluster drift that fails Lula OSCAL validation against `docs/compliance/oscal-il5.yaml`."
-            ),
-            "inject_cmds": [
-                f"""kubectl patch deployment order-api -n {ns} --type='json' -p='[{{"op":"add","path":"/spec/template/spec/containers/0/securityContext","value":{{"allowPrivilegeEscalation":true}}}}]'"""
-            ],
-            "heal_cmds": [
-                f"""kubectl patch deployment order-api -n {ns} --type='json' -p='[{{"op":"add","path":"/spec/template/spec/containers/0/securityContext","value":{{"allowPrivilegeEscalation":false}}}}]'"""
-            ],
-            "verify_cmd": "lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml",
-            "symptoms": (
-                "Pods run normally, but `lula validate -f docs/compliance/oscal-il5.yaml` fails control `ac-3` "
-                "(UUID c65f7e81-d204-4cc6-93be-1706402f0ff8) with state `not-satisfied`."
-            ),
-            "tutor_steps": [
-                {
-                    "phase": "Phase 1: Detect (Run Lula OSCAL Compliance Validation)",
-                    "prompt": "Run `lula validate` against `docs/compliance/oscal-il5.yaml` to audit the live cluster.",
-                    "recommended_cmd": "lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml",
-                    "hint": "Run `lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml`.",
-                    "explanation": (
-                        "Lula queries the Kubernetes API and evaluates the embedded OPA Rego policies, reporting "
-                        "that control `ac-3` (`c65f7e81-d204-4cc6-93be-1706402f0ff8`) is `not-satisfied`!"
-                    ),
-                },
-                {
-                    "phase": "Phase 2: Isolate (Evaluate Assessment Results & Inspect OSCAL Rule)",
-                    "prompt": "Run `lula evaluate` on the generated `docs/compliance/assessment-results.yaml` or inspect the failing Rego rule.",
-                    "recommended_cmd": "lula evaluate -f docs/compliance/assessment-results.yaml",
-                    "hint": "Run `lula evaluate -f docs/compliance/assessment-results.yaml` or inspect `docs/compliance/oscal-il5.yaml`.",
-                    "explanation": (
-                        "Control `ac-3` requires every container in `training-app` deployments to have "
-                        "`securityContext.allowPrivilegeEscalation == false`."
-                    ),
-                },
-                {
-                    "phase": "Phase 3: Root Cause (Locate the Non-Compliant Deployment via kubectl)",
-                    "prompt": f"Query deployments in '{ns}' to see which container has `allowPrivilegeEscalation: true`.",
-                    "recommended_cmd": (
-                        f"kubectl get deploy -n {ns} "
-                        "-o jsonpath='{range .items[*]}{.metadata.name}{\": \"}{.spec.template.spec.containers[*].securityContext}{" + '"\\n"' + "}{end}'"
-                    ),
-                    "hint": f"Run `kubectl get deploy -n {ns} -o yaml | grep -B5 -A5 allowPrivilegeEscalation`.",
-                    "explanation": "`order-api` has `{\"allowPrivilegeEscalation\":true}` in its container securityContext.",
-                },
-                {
-                    "phase": "Phase 4: Remediate & Verify (Patch SecurityContext & Re-run Lula)",
-                    "prompt": (
-                        f"Patch `order-api` in '{ns}' back to `allowPrivilegeEscalation: false` and re-run `lula validate`."
-                    ),
-                    "recommended_cmd": (
-                        f"kubectl patch deployment order-api -n {ns} --type='json' "
-                        "-p='[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/securityContext\",\"value\":{\"allowPrivilegeEscalation\":false}}]' "
-                        "&& lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml"
-                    ),
-                    "hint": "Patch `allowPrivilegeEscalation: false` on `order-api` and run `lula validate -f docs/compliance/oscal-il5.yaml`.",
-                    "explanation": "All 5 NIST 800-53 controls now return `satisfied` in Lula!",
-                },
-            ],
-        },
-    }
+    """Build the scenario catalog parameterized by the active training namespace.
+
+    Discovers all scenario YAML files in `scripts/drills/`, validates schema,
+    and returns a catalog ordered by learning domains.
+    """
+    scenarios: dict[str, dict[str, Any]] = {}
+    if not DRILLS_DIR.is_dir():
+        return scenarios
+
+    loaded: list[tuple[int, str, Scenario]] = []
+    for yaml_path in DRILLS_DIR.glob("*.yaml"):
+        if yaml_path.name == "cheatsheet.yaml":
+            continue
+        try:
+            scenario = load_scenario_file(yaml_path, ns)
+            domain_idx = DOMAIN_ORDER.index(scenario.domain) if scenario.domain in DOMAIN_ORDER else 99
+            loaded.append((domain_idx, scenario.id, scenario))
+        except Exception as e:
+            print(f"{YELLOW}Warning: Failed to load drill scenario from {yaml_path.name}: {e}{RESET}", file=sys.stderr)
+
+    # Sort primarily by curriculum domain progression, then by scenario ID
+    loaded.sort(key=lambda item: (item[0], item[1]))
+
+    for _, sc_id, sc in loaded:
+        scenarios[sc_id] = sc.to_dict()
+
+    return scenarios
 
 
 def domain_badge(domain: str) -> str:
@@ -647,47 +169,21 @@ def print_cheatsheet(ns: str) -> None:
     print(f"\n{BOLD}{BLUE}===================================================================================={RESET}")
     print(f"{BOLD}{BLUE}     AIR-GAPPED PLATFORM ENGINEERING CLI TROUBLESHOOTING CHEAT SHEET                {RESET}")
     print(f"{BOLD}{BLUE}===================================================================================={RESET}\n")
-    sections = [
-        (
-            "1. KUBERNETES WORKLOAD & NETWORK DIAGNOSTICS (kubectl)",
-            [
-                (f"kubectl get pods -n {ns} -o wide", "Check pod status, restarts, IPs, and assigned nodes"),
-                (f"kubectl get events -n {ns} --sort-by=.metadata.creationTimestamp", "Chronological namespace events (probe fails, pull errors)"),
-                (f"kubectl describe pod -n {ns} -l app=order-api", "Inspect container exit codes (137=OOM), probes, and events"),
-                (f"kubectl logs -n {ns} -l app=queue-worker --previous", "View stdout/stderr from a previously crashed container"),
-                (f"kubectl get svc,ep,netpol -n {ns}", "Inspect Services, backing Endpoint IPs/ports, and NetworkPolicies"),
-                (f"kubectl rollout undo deployment/<name> -n {ns}", "Roll back a broken Deployment to its previous revision"),
-            ],
-        ),
-        (
-            "2. ZARF AIR-GAP REGISTRY & WEBHOOK DIAGNOSTICS (zarf)",
-            [
-                ("zarf tools registry catalog", "List all container repositories inside the in-cluster Zarf registry"),
-                ("zarf tools registry ls library/python", "List available tags for an image in the internal Zarf registry"),
-                ("zarf package list", "List all Zarf packages deployed in the cluster"),
-                ("zarf package inspect <pkg.tar.zst>", "Inspect components, images, and SBOMs inside a Zarf archive"),
-                ("kubectl logs -n zarf -l app=agent-hook --tail=30", "Inspect Zarf mutating webhook pod mutation logs"),
-            ],
-        ),
-        (
-            "3. UDS BUNDLE & PEPR POLICY DIAGNOSTICS (uds)",
-            [
-                ("uds inspect build/uds-bundle-*.tar.zst", "Inspect UDS bundle manifest and constituent Zarf packages"),
-                ("uds deploy build/uds-bundle-*.tar.zst --confirm", "Deploy a compiled UDS bundle across the air-gap"),
-                ("uds monitor", "Stream real-time UDS Pepr policy admission & network events"),
-            ],
-        ),
-        (
-            "4. LULA OSCAL COMPLIANCE-AS-CODE DIAGNOSTICS (lula)",
-            [
-                ("lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml", "Evaluate live cluster state against NIST 800-53 OSCAL controls"),
-                ("lula evaluate -f docs/compliance/assessment-results.yaml", "Gate pass/fail status on generated OSCAL assessment results"),
-            ],
-        ),
-    ]
-    for header, rows in sections:
+
+    if not CHEATSHEET_FILE.is_file():
+        print(f"{YELLOW}Warning: Cheatsheet file not found at {CHEATSHEET_FILE}{RESET}")
+        return
+
+    raw = CHEATSHEET_FILE.read_text(encoding="utf-8")
+    rendered = raw.replace("${NAMESPACE}", ns).replace("${ns}", ns)
+    sections = yaml.safe_load(rendered) or []
+
+    for sec in sections:
+        header = sec.get("title", "")
         print(f"{BOLD}{YELLOW}{header}{RESET}")
-        for cmd, desc in rows:
+        for item in sec.get("commands", []):
+            cmd = item.get("cmd", "")
+            desc = item.get("desc", "")
             print(f"  {GREEN}{cmd:<68}{RESET} {DIM}# {desc}{RESET}")
         print()
 

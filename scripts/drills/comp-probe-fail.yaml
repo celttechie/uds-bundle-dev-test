@@ -1,0 +1,33 @@
+id: comp-probe-fail
+domain: Compute
+tools:
+- kubectl
+title: Liveness Probe HTTP 404 Failure Loop
+description: Configures an invalid livenessProbe path (`/healthz-broken-path`) on `order-api` in '${NAMESPACE}'.
+symptoms: order-api containers are repeatedly killed and restarted by kubelet due to HTTP 404 liveness probe failures.
+inject_cmds:
+- kubectl patch deployment order-api -n ${NAMESPACE} --type='json' -p='[{"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/httpGet/path","value":"/healthz-broken-path"}]'
+heal_cmds:
+- kubectl patch deployment order-api -n ${NAMESPACE} --type='json' -p='[{"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/httpGet/path","value":"/healthz"}]'
+verify_cmd: kubectl get events -n ${NAMESPACE} --sort-by=.metadata.creationTimestamp | tail -n 10
+tutor_steps:
+- phase: 'Phase 1: Detect (Observe Pod Restarts)'
+  prompt: Check pod statuses and restart counts in '${NAMESPACE}'.
+  recommended_cmd: kubectl get pods -n ${NAMESPACE} -l app=order-api
+  hint: Run `kubectl get pods -n ${NAMESPACE} -l app=order-api`.
+  explanation: '`order-api` pods are restarting every ~30 seconds.'
+- phase: 'Phase 2: Isolate (Inspect Namespace Events)'
+  prompt: Check recent Kubernetes events in '${NAMESPACE}' sorted by creation timestamp.
+  recommended_cmd: kubectl get events -n ${NAMESPACE} --sort-by=.metadata.creationTimestamp | tail -n 15
+  hint: Run `kubectl get events -n ${NAMESPACE} --sort-by=.metadata.creationTimestamp`.
+  explanation: 'Events show `Warning Unhealthy: Liveness probe failed: HTTP probe failed with statuscode: 404`.'
+- phase: 'Phase 3: Root Cause (Compare Liveness vs Readiness Probe Paths)'
+  prompt: Inspect the `livenessProbe` and `readinessProbe` definitions on `order-api`.
+  recommended_cmd: kubectl describe deploy order-api -n ${NAMESPACE} | grep -E 'Liveness:|Readiness:'
+  hint: Run `kubectl describe deploy order-api -n ${NAMESPACE}`.
+  explanation: Readiness checks `/healthz` (200 OK), while Liveness was misconfigured to `/healthz-broken-path` (404).
+- phase: 'Phase 4: Remediate & Verify (Fix Liveness Probe Path)'
+  prompt: Patch the `order-api` livenessProbe path back to `/healthz`.
+  recommended_cmd: kubectl patch deployment order-api -n ${NAMESPACE} --type='json' -p='[{"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/httpGet/path","value":"/healthz"}]'
+  hint: Run `kubectl rollout undo deployment/order-api -n ${NAMESPACE}` or patch `/healthz`.
+  explanation: Liveness probes now return HTTP 200 and pod restarts cease.

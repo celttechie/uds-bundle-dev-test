@@ -1,0 +1,55 @@
+id: net-policy-block
+domain: UDS/Networking
+tools:
+- kubectl
+- uds
+title: Zero-Trust NetworkPolicy Ingress Block
+description: 'Applies an overriding NetworkPolicy (''deny-order-api-ingress'') in ''${NAMESPACE}'' that selects `app: order-api`
+  and blocks all ingress traffic from `frontend`.'
+symptoms: All pods show 1/1 Running, but requests from frontend to order-api:8080 time out due to a restrictive NetworkPolicy.
+inject_cmds:
+- |-
+  cat << 'EOF' | kubectl apply -f -
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: deny-order-api-ingress
+      namespace: ${NAMESPACE}
+    spec:
+      podSelector:
+        matchLabels:
+          app: order-api
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app: nonexistent-service
+    EOF
+heal_cmds:
+- kubectl delete networkpolicy deny-order-api-ingress -n ${NAMESPACE} --ignore-not-found
+verify_cmd: kubectl get networkpolicy -n ${NAMESPACE}
+tutor_steps:
+- phase: 'Phase 1: Detect (Pods Running, Traffic Timing Out)'
+  prompt: Verify that pods and services in '${NAMESPACE}' appear healthy despite the connectivity failure.
+  recommended_cmd: kubectl get pods,svc -n ${NAMESPACE}
+  hint: Run `kubectl get pods,svc -n ${NAMESPACE}`.
+  explanation: Both `frontend` and `order-api` pods are `Running` and Services have valid ClusterIPs.
+- phase: 'Phase 2: Isolate (List Active NetworkPolicies)'
+  prompt: List the Kubernetes NetworkPolicies active in the '${NAMESPACE}' namespace.
+  recommended_cmd: kubectl get networkpolicy -n ${NAMESPACE}
+  hint: Run `kubectl get netpol -n ${NAMESPACE}`.
+  explanation: Alongside `allow-training-internal`, there is a suspicious policy named `deny-order-api-ingress` targeting
+    `app=order-api`.
+- phase: 'Phase 3: Root Cause (Inspect NetworkPolicy Rules)'
+  prompt: Describe `deny-order-api-ingress` to see which pods are allowed to connect to `order-api`.
+  recommended_cmd: kubectl describe networkpolicy deny-order-api-ingress -n ${NAMESPACE}
+  hint: Run `kubectl describe netpol deny-order-api-ingress -n ${NAMESPACE}`.
+  explanation: The policy restricts ingress on `app=order-api` exclusivamente to `app=nonexistent-service`, dropping packets
+    from `frontend`.
+- phase: 'Phase 4: Remediate & Verify (Remove Rogue NetworkPolicy)'
+  prompt: Delete the rogue `deny-order-api-ingress` NetworkPolicy in '${NAMESPACE}'.
+  recommended_cmd: kubectl delete networkpolicy deny-order-api-ingress -n ${NAMESPACE}
+  hint: Run `kubectl delete netpol deny-order-api-ingress -n ${NAMESPACE}`.
+  explanation: Deleting the rogue policy restores inter-service communication under `allow-training-internal`.

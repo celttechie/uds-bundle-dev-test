@@ -1,0 +1,35 @@
+id: net-port-mismatch
+domain: UDS/Networking
+tools:
+- kubectl
+title: Service TargetPort Misconfiguration (Connection Refused)
+description: Changes `order-api` Service targetPort in '${NAMESPACE}' from 8080 to 9090.
+symptoms: order-api pods are 1/1 Running and DNS resolves, but connections to order-api:8080 immediately fail with 'Connection
+  refused'.
+inject_cmds:
+- kubectl patch svc order-api -n ${NAMESPACE} --type='json' -p='[{"op":"replace","path":"/spec/ports/0/targetPort","value":9090}]'
+heal_cmds:
+- kubectl patch svc order-api -n ${NAMESPACE} --type='json' -p='[{"op":"replace","path":"/spec/ports/0/targetPort","value":8080}]'
+verify_cmd: kubectl get svc,ep order-api -n ${NAMESPACE}
+tutor_steps:
+- phase: 'Phase 1: Detect (Inspect Service & Endpoints)'
+  prompt: Check the `order-api` Service and Endpoints in '${NAMESPACE}'.
+  recommended_cmd: kubectl get svc,ep order-api -n ${NAMESPACE}
+  hint: Run `kubectl get svc,ep order-api -n ${NAMESPACE}`.
+  explanation: 'Look closely at the `ENDPOINTS` column: the pod IPs are listed with port `:9090` instead of `:8080`!'
+- phase: 'Phase 2: Isolate (Compare Service TargetPort vs ContainerPort)'
+  prompt: Describe the `order-api` Service and check the container port on the `order-api` Deployment.
+  recommended_cmd: kubectl describe svc order-api -n ${NAMESPACE}
+  hint: Run `kubectl describe svc order-api -n ${NAMESPACE}`.
+  explanation: '`Port` is `8080/TCP`, but `TargetPort` was changed to `9090/TCP`, while the Python HTTP server inside the
+    container listens on port `8080`.'
+- phase: 'Phase 3: Root Cause (Verify Container Listening Port)'
+  prompt: Check the containerPort configured on the `order-api` deployment.
+  recommended_cmd: kubectl get deploy order-api -n ${NAMESPACE} -o jsonpath='{.spec.template.spec.containers[0].ports}'
+  hint: Run `kubectl get deploy order-api -n ${NAMESPACE} -o jsonpath='{.spec.template.spec.containers[0].ports}'`.
+  explanation: 'The container exposes `containerPort: 8080`, confirming the Service `targetPort: 9090` is wrong.'
+- phase: 'Phase 4: Remediate & Verify (Patch Service TargetPort to 8080)'
+  prompt: Patch the `order-api` Service in '${NAMESPACE}' so `targetPort` is `8080`.
+  recommended_cmd: kubectl patch svc order-api -n ${NAMESPACE} --type='json' -p='[{"op":"replace","path":"/spec/ports/0/targetPort","value":8080}]'
+  hint: Run `kubectl patch svc order-api -n ${NAMESPACE} -p '{"spec":{"ports":[{"port":8080,"targetPort":8080}]}}'`.
+  explanation: Endpoints immediately update to `:8080` and traffic flows normally.

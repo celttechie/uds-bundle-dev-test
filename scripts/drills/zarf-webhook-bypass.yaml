@@ -1,0 +1,47 @@
+id: zarf-webhook-bypass
+domain: Zarf/Air-Gap
+tools:
+- kubectl
+- zarf
+title: Zarf Mutating Webhook Bypassed (zarf.dev/agent=ignore)
+description: 'Adds the label `zarf.dev/agent: ignore` to queue-worker pod template in ''${NAMESPACE}'' and sets `imagePullPolicy:
+  Always`, causing kubelet to bypass the internal Zarf registry and attempt an upstream internet pull across the air-gap.'
+symptoms: queue-worker fails with ImagePullBackOff trying to reach registry-1.docker.io instead of 127.0.0.1:31999 because
+  the Zarf agent webhook ignored the pod.
+inject_cmds:
+- |-
+  kubectl patch deployment queue-worker -n ${NAMESPACE} --type='json' -p='[
+        {"op":"add","path":"/spec/template/metadata/labels/zarf.dev~1agent","value":"ignore"},
+        {"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"Always"}
+    ]'
+heal_cmds:
+- |-
+  kubectl patch deployment queue-worker -n ${NAMESPACE} --type='json' -p='[
+        {"op":"remove","path":"/spec/template/metadata/labels/zarf.dev~1agent"},
+        {"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"IfNotPresent"}
+    ]' 2>/dev/null || kubectl rollout undo deployment/queue-worker -n ${NAMESPACE}
+verify_cmd: kubectl get pods -n ${NAMESPACE} -l app=queue-worker
+tutor_steps:
+- phase: 'Phase 1: Detect (Check Pod & Zarf Agent Logs)'
+  prompt: Check the pod status in '${NAMESPACE}' and inspect recent events.
+  recommended_cmd: kubectl get pods -n ${NAMESPACE} -l app=queue-worker
+  hint: Run `kubectl get pods -n ${NAMESPACE} -l app=queue-worker`.
+  explanation: The newly created `queue-worker` pod is stuck in `ErrImagePull` / `ImagePullBackOff`.
+- phase: 'Phase 2: Isolate (Compare Image URL & Zarf Webhook Logs)'
+  prompt: Check the Zarf agent mutating webhook logs in the `zarf` namespace or describe the failing pod.
+  recommended_cmd: kubectl describe pod -n ${NAMESPACE} -l app=queue-worker | grep -E 'Image:|Failed|zarf'
+  hint: Run `kubectl describe pod -n ${NAMESPACE} -l app=queue-worker` and check `kubectl logs -n zarf -l app=agent-hook --tail=20`.
+  explanation: Notice the pod is attempting to pull `docker.io/library/python:3.11-alpine` directly from the internet rather
+    than `127.0.0.1:31999/...`!
+- phase: 'Phase 3: Root Cause (Inspect Pod Template Labels)'
+  prompt: Inspect the labels on the `queue-worker` deployment template in '${NAMESPACE}'.
+  recommended_cmd: kubectl get deployment queue-worker -n ${NAMESPACE} -o jsonpath='{.spec.template.metadata.labels}'
+  hint: Run `kubectl get deployment queue-worker -n ${NAMESPACE} -o jsonpath='{.spec.template.metadata.labels}'`.
+  explanation: The pod template has `"zarf.dev/agent":"ignore"`, which explicitly instructs Zarf's mutating admission webhook
+    not to rewrite image references or inject registry pull secrets.
+- phase: 'Phase 4: Remediate & Verify (Re-enable Zarf Agent Mutation)'
+  prompt: 'Roll back or patch the `queue-worker` deployment to remove `zarf.dev/agent: ignore`.'
+  recommended_cmd: kubectl rollout undo deployment/queue-worker -n ${NAMESPACE}
+  hint: Run `kubectl rollout undo deployment/queue-worker -n ${NAMESPACE}`.
+  explanation: 'Removing the `zarf.dev/agent: ignore` label allows Zarf''s webhook to mutate the pod spec back to the in-cluster
+    registry.'

@@ -1,0 +1,40 @@
+- title: 1. KUBERNETES WORKLOAD & NETWORK DIAGNOSTICS (kubectl)
+  commands:
+  - cmd: kubectl get pods -n ${NAMESPACE} -o wide
+    desc: Check pod status, restarts, IPs, and assigned nodes
+  - cmd: kubectl get events -n ${NAMESPACE} --sort-by=.metadata.creationTimestamp
+    desc: Chronological namespace events (probe fails, pull errors)
+  - cmd: kubectl describe pod -n ${NAMESPACE} -l app=order-api
+    desc: Inspect container exit codes (137=OOM), probes, and events
+  - cmd: kubectl logs -n ${NAMESPACE} -l app=queue-worker --previous
+    desc: View stdout/stderr from a previously crashed container
+  - cmd: kubectl get svc,ep,netpol -n ${NAMESPACE}
+    desc: Inspect Services, backing Endpoint IPs/ports, and NetworkPolicies
+  - cmd: kubectl rollout undo deployment/<name> -n ${NAMESPACE}
+    desc: Roll back a broken Deployment to its previous revision
+- title: 2. ZARF AIR-GAP REGISTRY & WEBHOOK DIAGNOSTICS (zarf)
+  commands:
+  - cmd: zarf tools registry catalog
+    desc: List all container repositories inside the in-cluster Zarf registry
+  - cmd: zarf tools registry ls library/python
+    desc: List available tags for an image in the internal Zarf registry
+  - cmd: zarf package list
+    desc: List all Zarf packages deployed in the cluster
+  - cmd: zarf package inspect <pkg.tar.zst>
+    desc: Inspect components, images, and SBOMs inside a Zarf archive
+  - cmd: kubectl logs -n zarf -l app=agent-hook --tail=30
+    desc: Inspect Zarf mutating webhook pod mutation logs
+- title: 3. UDS BUNDLE & PEPR POLICY DIAGNOSTICS (uds)
+  commands:
+  - cmd: uds inspect build/uds-bundle-*.tar.zst
+    desc: Inspect UDS bundle manifest and constituent Zarf packages
+  - cmd: uds deploy build/uds-bundle-*.tar.zst --confirm
+    desc: Deploy a compiled UDS bundle across the air-gap
+  - cmd: uds monitor
+    desc: Stream real-time UDS Pepr policy admission & network events
+- title: 4. LULA OSCAL COMPLIANCE-AS-CODE DIAGNOSTICS (lula)
+  commands:
+  - cmd: lula validate -f docs/compliance/oscal-il5.yaml -o docs/compliance/assessment-results.yaml
+    desc: Evaluate live cluster state against NIST 800-53 OSCAL controls
+  - cmd: lula evaluate -f docs/compliance/assessment-results.yaml
+    desc: Gate pass/fail status on generated OSCAL assessment results
